@@ -1247,6 +1247,11 @@ COMPLETION_BANNER = r"""
 
 def animate_completion(state: dict) -> None:
     """Mostra el banner i fa sortir la nau per la dreta del camp."""
+    # En demo no hi ha animacions: fora terreny i nau, i endavant.
+    if DEMO_MODE:
+        state["terrain"] = []
+        state["hide_player"] = True
+        return
     # Mostra el banner centrat en una pantalla separada
     banner_lines = paint(COMPLETION_BANNER, "92").splitlines()
     padding = (SCREEN_HEIGHT - len(banner_lines)) // 2
@@ -1280,6 +1285,10 @@ BANNER = r"""
 
 def show_intro() -> None:
     """Pantalla de benvinguda amb els controls; espera una tecla per començar."""
+    if DEMO_MODE:
+        # En demo no hi ha teclat: una sola linia i correm.
+        print(paint(f"[demo] Mapa: {MAPS[CURRENT_MAP]['name']}", CODE_HINT))
+        return
     clear_screen()
     print(paint(BANNER, CODE_TITLE))
     print(paint(f"   Mapa: {MAPS[CURRENT_MAP]['name']}", CODE_HINT))
@@ -1336,6 +1345,181 @@ def show_campaign_complete(score: int) -> None:
 
 
 # --------------------------------------------------------------------------- #
+# Mode demo (pilot automatic determinista)                                    #
+# --------------------------------------------------------------------------- #
+# `python main.py --demo [nivell]` juga la campanya sola, amb un pilot
+# automatic determinista: serveix per provar el bucle complet (spawns,
+# terreny, kits, fi de nivell) sense teclat, al terminal o a la CI. La
+# politica, per ordre de prioritat: 1) colocar-se al corredor lliure que
+# imposen les parets properes (interseccio de les seves franges lliures);
+# 2) dins del corredor, esquivar el perill (tret apuntat o enemic) mes
+# proper SENSE sortir-ne mai; 3) sense corredor proper, esquivar el perill
+# mes proper; 4) si no hi ha perills, derivar cap al centre del camp; i
+# disparar sempre que hi hagi enemics per davant (el cooldown regula el
+# ritme de tir). La llavor fixa fa que cada execucio sigui identica.
+DEMO_MODE = False              # s'activa amb --demo a la linia de comandes
+DEMO_SEED = 1                  # llavor fixa per a drops reproduibles
+DEMO_RENDER_EVERY = 60         # pinta un frame cada N ticks (0 = mai)
+DEMO_MAX_TICKS = 20000         # fusible: cap nivell hauria de durar tant
+DEMO_ENEMY_LOOKAHEAD = 12.0    # celes per davant on un enemic es amenaça
+DEMO_NEAR_CELLS = 3.0          # celes al voltant de la columna de la nau on
+                               # qualsevol enemic es perill imminent (dispara
+                               # apuntat des de qualsevol alçada)
+DEMO_SHOT_PREDICT = 80         # ticks de trajectoria de tret que es prediu
+                               # (el vol sencer: la ruta es fixa en disparar)
+DEMO_WALL_AHEAD = 16.0         # columnes per davant que cal tenir en compte
+DEMO_WALL_BEHIND = 2.0         # columnes ja depassades que encara compten
+
+
+def _corridor_free_band(state: dict):
+    """Banda vertical lliure (lo, hi) imposada per les parets properes.
+
+    Considera TOTES les columnes que la nau te a sobre o que s'hi apropen
+    (dins DEMO_WALL_AHEAD/DEMO_WALL_BEHIND) i retorna la INTERSECCIO de les
+    seves franges lliures: aixi les rampes i esglaons no enganyen, perque la
+    banda ja compleix la columna mes exigent. Retorna None si no hi ha cap
+    paret rellevant.
+    """
+    sr = ship_rect(state)
+    nose = sr[0] + sr[2]
+    x_w = 1.0 / SCREEN_WIDTH
+    lo, hi, found = 0.0, 1.0, False
+    for column in state["terrain"]:
+        if column["top"] == 0 and column["bot"] == 0:
+            continue                       # columna sense parets
+        if column["x"] + x_w <= sr[0] - DEMO_WALL_BEHIND * x_w:
+            continue                       # completament enrrera
+        if column["x"] > nose + DEMO_WALL_AHEAD * x_w:
+            continue                       # encara massa lluny
+        found = True
+        lo = max(lo, column["top"] / SCREEN_HEIGHT)
+        hi = min(hi, 1.0 - column["bot"] / SCREEN_HEIGHT)
+    if not found:
+        return None
+    return lo, hi
+
+
+def _shot_threat(state: dict, sr):
+    """Primer tret enemic que creuara el casc segons la seva trajectoria.
+
+    Simula DEMO_SHOT_PREDICT ticks de vol (son trets APUNTATS: la seva ruta
+    ja es fixa en disparar, aixi que predir-la es fiable) amb el casc inflat
+    mig fila de marge. Retorna (distancia_del_morro, cy_previst) o None.
+    """
+    w, h = s_w_n(("o",)), s_h_n(("o",))
+    pad = 0.5 / SCREEN_HEIGHT
+    best = None
+    for s in state["enemy_shots"]:
+        if s["vx"] >= 0.0:
+            continue                       # s'allunya: no amenaça
+        for k in range(1, DEMO_SHOT_PREDICT + 1):
+            px = s["x"] + s["vx"] * k
+            py = s["y"] + s["vy"] * k
+            if px + w <= sr[0]:
+                break                      # ha depassat la nau: no la toca
+            if rects_overlap(px, py, w, h,
+                             sr[0], sr[1] - pad, sr[2], sr[3] + 2 * pad):
+                d = px - (sr[0] + sr[2])
+                if best is None or d < best[0]:
+                    best = (d, py + h / 2)
+                break
+    return best
+
+
+def _enemy_threat(state: dict, sr):
+    """Enemic mes proper per davant que comparteix banda vertical amb la nau.
+
+    Retorna (distancia_del_morro_al_perill, cy_del_perill) o None.
+    """
+    threat, threat_cy, gap = None, 0.0, None
+    for enemy in state["enemies"]:
+        ex, ey, ew, eh = enemy_rect(enemy)
+        if ex + ew <= sr[0]:
+            continue                       # per darrera: no amenaça
+        if ex > sr[0] + sr[2] + DEMO_ENEMY_LOOKAHEAD / SCREEN_WIDTH:
+            continue                       # massa lluny
+        band = (eh + sr[3]) / 2.0 + 0.8 / SCREEN_HEIGHT
+        if ey + eh < sr[1] - band or ey > sr[1] + sr[3] + band:
+            continue                       # bandes verticals separades
+        d = ex - sr[0]
+        if gap is None or d < gap:
+            gap, threat, threat_cy = d, enemy, ey + eh / 2.0
+    if threat is None:
+        return None
+    return gap, threat_cy
+
+
+def demo_actions(state: dict) -> set:
+    """Accions del pilot automatic per a aquest tick (mateix format que
+    `pressed_keys()`): conjunt d'ACCIONS actives."""
+    actions = set()
+    sr = ship_rect(state)
+    ship_cy = sr[1] + sr[3] / 2.0
+    max_y = 1.0 - s_h_n(PLAYER_SPRITE)
+
+    # Intencio vertical, per prioritats ESTRICTES: dins de corredor, nomes
+    # centrat (esquivar-hi ha acabat estampant la nau contra les rampes);
+    # sense corredor proper, esquiva el perill predit (tret apuntat o enemic).
+    # Els trets que neixin a escassos ticks del casc son riscs acceptats.
+    band = _corridor_free_band(state)
+    dy = 0.0
+    if band is not None:
+        c_lo = band[0] + sr[3] / 2.0          # rang valid del CENTRE de la nau
+        c_hi = band[1] - sr[3] / 2.0
+        dy = (c_lo + c_hi) / 2.0 - ship_cy    # centra dins del corredor
+        if abs(dy) < 0.5 / SCREEN_HEIGHT:     # zona morta: no jitterar
+            dy = 0.0
+        # Dins del corredor tambe cal esquivar perills (els trets apuntats i
+        # els crashes son la primera causa de desgast), pero SEMPRE sense
+        # sortir de la banda: si el pas d'esquiva ens faria sortir, es
+        # manté el centrat. Esquiva el perill mes proper dels dos.
+        shot = _shot_threat(state, sr)
+        foe = _enemy_threat(state, sr)
+        threat = None
+        if shot is not None and (foe is None or shot[0] <= foe[0]):
+            threat = shot
+        elif foe is not None:
+            threat = foe
+        if threat is not None:
+            dodge = -1.0 if threat[1] >= ship_cy else 1.0
+            nxt = ship_cy + dodge / SCREEN_HEIGHT
+            if c_lo - 1e-9 <= nxt <= c_hi + 1e-9:
+                dy = dodge
+    else:
+        shot = _shot_threat(state, sr)
+        foe = _enemy_threat(state, sr)
+        if shot is not None and (foe is None or shot[0] <= foe[0]):
+            threat = shot
+        elif foe is not None:
+            threat = foe
+        else:
+            threat = None
+        if threat is not None:
+            dy = -1.0 if threat[1] >= ship_cy else 1.0
+        elif abs(state["player_y"]
+                 - (0.5 - sr[3] / 2.0)) > 2.0 / SCREEN_HEIGHT:
+            dy = (0.5 - sr[3] / 2.0) - state["player_y"]   # deriva al centre
+        else:
+            dy = 0.0
+
+    # Converteix la intencio en accio feasible (respectant les vores), amb una
+    # zona morta de mig fila: sense ella, el centre del corredor mou la nau
+    # amunt i avall cada tick (oscil·lacio) i pot ficarla dins d'una rampa.
+    if dy < -0.5 / SCREEN_HEIGHT:
+        actions.add(ACTION_UP if state["player_y"] > 0 else ACTION_DOWN)
+    elif dy > 0.5 / SCREEN_HEIGHT:
+        actions.add(ACTION_DOWN if state["player_y"] < max_y else ACTION_UP)
+
+    # Dispara si hi ha qualsevol enemic per davant del morro.
+    for enemy in state["enemies"]:
+        ex, _ey, _ew, _eh = enemy_rect(enemy)
+        if ex > sr[0] + sr[2] - 2.0 / SCREEN_WIDTH:
+            actions.add(ACTION_SHOOT)
+            break
+    return actions
+
+
+# --------------------------------------------------------------------------- #
 # Bucle principal                                                             #
 # --------------------------------------------------------------------------- #
 def run_round():
@@ -1353,7 +1537,8 @@ def run_round():
         # 1. Llegeix l'ESTAT del teclat: totes les tecles premudes ara mateix.
         #    En ser estat (i no pulsacions), pots mantenir la tecla premuda
         #    per moure't contínuament i prémer diverses tecles alhora.
-        actions = pressed_keys()
+        #    En mode demo, qui decideix es el pilot automatic.
+        actions = demo_actions(state) if DEMO_MODE else pressed_keys()
 
         if ACTION_QUIT in actions:
             return "quit", state["score"]
@@ -1383,17 +1568,26 @@ def run_round():
         if state["completed"]:
             animate_completion(state)
             return "completed", state["score"]
+        if DEMO_MODE and state["ticks"] > DEMO_MAX_TICKS:
+            return "timeout", state["score"]   # fusible anti-bucle infinit
 
         # 4. Renderitza sense parpalleig i marca el ritme del bucle -------------
-        draw_frame(render(state))
-        time.sleep(GAME_TICK)
+        #    En demo anem a maxim: nomes un frame cada DEMO_RENDER_EVERY ticks
+        #    i cap espera, perque una campanya sencera duri segons.
+        if not DEMO_MODE or (DEMO_RENDER_EVERY
+                             and state["ticks"] % DEMO_RENDER_EVERY == 0):
+            draw_frame(render(state))
+        if not DEMO_MODE:
+            time.sleep(GAME_TICK)
 
 
 def print_usage() -> None:
     """Mostra la forma d'us del programa a la linia de comandes."""
-    print("Us: python main.py [nivell]")
+    print("Us: python main.py [--demo] [nivell]")
     print(f"  nivell    numero del nivell inicial (1-{len(MAPS)}). "
           f"Sense argument, campanya completa des del nivell 1.")
+    print("  --demo    la juga sola: pilot automatic determinista (sense")
+    print("            teclat, a maxima velocitat; per proves i CI)")
 
 
 def level_from_args(argv):
@@ -1403,14 +1597,17 @@ def level_from_args(argv):
     provar un nivell concret sense passar pels anteriors. Sense arguments
     retorna None i la campanya comença pel primer nivell. Amb -h/--ajuda
     mostra l'us; si l'argument es invalid, llista els nivells disponibles
-    i acaba el programa.
+    i acaba el programa. El prefix opcional --demo no canvia el nivell.
     """
-    if len(argv) <= 1:
+    rest = list(argv[1:])
+    if rest and rest[0] == "--demo":
+        rest = rest[1:]
+    if not rest:
         return None
-    if argv[1] in ("-h", "--ajuda", "--help"):
+    if rest[0] in ("-h", "--ajuda", "--help"):
         print_usage()
         raise SystemExit(0)
-    raw = argv[1]
+    raw = rest[0]
     if not raw.isdigit() or not 1 <= int(raw) <= len(MAPS):
         print(f"Error: nivell '{raw}' invalid. Nivells disponibles:")
         for i, mapa in enumerate(MAPS, start=1):
@@ -1421,14 +1618,18 @@ def level_from_args(argv):
 
 
 def main() -> None:
-    global CURRENT_MAP
+    global CURRENT_MAP, DEMO_MODE
+    DEMO_MODE = "--demo" in sys.argv[1:]
+    if DEMO_MODE:
+        random.seed(DEMO_SEED)             # reproduibilitat del pilot
     nivell_inicial = level_from_args(sys.argv)
     if nivell_inicial is not None:
         # Mode de prova: la campanya comença al nivell demanat i, en
         # superar-lo, continua amb el seguent com sempre.
         CURRENT_MAP = nivell_inicial
+    demo_timeout = False
     try:
-        if COLOR_ENABLED:
+        if COLOR_ENABLED and not DEMO_MODE:
             # Amaguem el cursor mentre dura el joc: salta per la pantalla a
             # cada frame i dona sensacio de parpalleig.
             sys.stdout.write("\x1b[?25l")
@@ -1439,6 +1640,17 @@ def main() -> None:
         show_intro()
         while True:
             outcome, score = run_round()
+            if DEMO_MODE:
+                print(paint(f"[demo] {MAPS[CURRENT_MAP]['name']}: "
+                            f"{outcome.upper()} - puntuacio: {score}",
+                            CODE_HUD if outcome == "completed" else CODE_ALERT))
+                if outcome == "timeout":
+                    demo_timeout = True
+                if outcome == "completed" and CURRENT_MAP + 1 < len(MAPS):
+                    CURRENT_MAP += 1
+                    show_intro()
+                    continue
+                break                       # campanya acabada, derrota o fusible
             if outcome == "quit":
                 break
             if outcome == "completed" and CURRENT_MAP + 1 < len(MAPS):
@@ -1470,6 +1682,16 @@ def main() -> None:
                 show_intro()
 
         clear_screen()
+        if DEMO_MODE:
+            # Resum final; el codi d'exit nomes falla si el motor s'ha
+            # encallat (una derrota del pilot es un resultat valid, no error).
+            print(paint("[demo] Campanya finalitzada"
+                        + (" - FUSIBLE DE TICKS ACTIVAT" if demo_timeout
+                           else ""),
+                        CODE_ALERT if demo_timeout else CODE_TITLE))
+            if demo_timeout:
+                sys.exit(1)
+            return
         print(paint("Gracies per jugar a R-Type ASCII!", CODE_TITLE))
     except KeyboardInterrupt:
         print("\nInterromput - adeu!")

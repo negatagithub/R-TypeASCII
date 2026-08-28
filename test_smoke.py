@@ -520,6 +520,30 @@ check("extra dron converts to bonus points",
       st["wingmans"] == g.MAX_WINGMANS
       and st["score"] == before + g.WINGMAN_SCORE_BONUS)
 
+# --- 14. mode demo: pilot automatic determinista -------------------------------
+check("demo level args: plain campaign",
+      g.level_from_args(["main.py"]) is None)
+check("demo level args: --demo alone",
+      g.level_from_args(["main.py", "--demo"]) is None)
+check("demo level args: --demo 2",
+      g.level_from_args(["main.py", "--demo", "2"]) == 1)
+st = quiet(col(8), row(9))
+st["enemies"] = [mk(DRONE, col(20), row(9))]
+a1 = g.demo_actions(st)
+check("demo shoots at an enemy ahead", g.ACTION_SHOOT in a1)
+st2 = quiet(col(8), row(9))
+st2["enemies"] = [mk(DRONE, col(20), row(9))]
+check("demo actions are deterministic", g.demo_actions(st2) == a1)
+# Nau centrada i sense amenaces: el pilot no toca res.
+st = quiet(col(8), 0.5 - g.s_h_n(g.PLAYER_SPRITE) / 2)
+check("demo idles with no threats", g.demo_actions(st) == set())
+# Paret de dalt que deixa pas per sota: el pilot baixa cap al corredor.
+st = quiet(col(8), row(9))
+st["terrain"].append({"x": col(16), "top": 8, "bot": 0,
+                      "edge": ("#", "91"), "fill": ("%", "90")})
+check("demo ducks under a top wall",
+      g.demo_actions(st) == {g.ACTION_DOWN})
+
 # --- resum ----------------------------------------------------------------------
 print()
 if failures:
