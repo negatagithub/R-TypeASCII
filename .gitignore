@@ -1,0 +1,16 @@
+# Cache de Python
+__pycache__/
+*.py[cod]
+
+# Entorns virtuals
+.venv/
+venv/
+
+# Editors i sistema
+.vscode/
+.idea/
+Thumbs.db
+Desktop.ini
+
+# Còpies de seguretat
+*.bak
