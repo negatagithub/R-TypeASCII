@@ -173,6 +173,19 @@ ENEMY_TYPES = (
      "hp": 4, "points": 80, "speed": 1, "weight": 15,
      "damage": 35,
      "color": "94"},           # blau brillant
+    {"name": "cap",            # enemic final: entra, s'atura i disparà rafegues
+     "sprite": make_sprite(
+         ("  [====]  ",
+          "<{======}>",
+          "<{==@@==}>",
+          "  [====]  "),
+         ((None, None, "95", "97", "97", "97", "97", "95", None, None),
+          ("95", "94", "94", "94", "94", "94", "94", "94", "94", "95"),
+          ("95", "94", "94", "94", "91", "91", "94", "94", "94", "95"),
+          (None, None, "95", "97", "97", "97", "97", "95", None, None))),
+     "hp": 30, "points": 500, "speed": 1, "weight": 0,
+     "damage": 45,
+     "color": "95"},           # magenta brillant
 )
 ENEMY_WEIGHTS = tuple(t["weight"] for t in ENEMY_TYPES)
 
@@ -184,6 +197,7 @@ ENEMY_SHOT_TYPES = (
     {"speed": 3.2, "damage": 8, "color": "91"},
     {"speed": 2.5, "damage": 18, "color": "95"},
     {"speed": 1.8, "damage": 32, "color": "94"},
+    {"speed": 1.6, "damage": 40, "color": "95"},   # rafega pesada del cap
 )
 
 # --- patrons de moviment -------------------------------------------------------
@@ -198,7 +212,18 @@ KIND_PATTERNS = (
     ("recta", "recta", "zigzag", "ona", "picat"),   # drons: imprevisibles
     ("ona", "zigzag", "picat", "puja"),             # cacers: agils
     ("recta", "ona"),                               # creuers: serens
+    ("cap",),                                       # el cap final: patró propi
 )
+
+# --- cap final -----------------------------------------------------------------
+# El cap (kind BOSS_KIND) entra per la dreta, s'atura a BOSS_STOP_COLS de la
+# vora i es balanceja disparant rafegues en ventall. No mor en xocar contra
+# la nau: li fa dany i l'empenta fora del seu casc. Matar-lo completa el
+# nivell que el porta (encara que quedin ticks de mapa).
+BOSS_KIND = 3                  # index del cap a ENEMY_TYPES
+BOSS_STOP_COLS = 3.0           # celes des de la vora dreta on s'atura
+BOSS_PUSH_COLS = 2.0           # empenta al casc quan la nau el toca
+BOSS_SPREAD = 0.004            # obertura vertical del ventall de la rafega
 
 # --- mapes -------------------------------------------------------------------
 # Els nivells NO viuen aqui dins: cada un es un fitxer propi numerat
@@ -852,6 +877,17 @@ def _move_enemy(enemy: dict, tick: int) -> None:
         dx = -spd_x
         # Versio espeix: puja en diagonal fins dalt i alli segueix recte.
         dy = -2.0 * step_y if enemy["y"] > 0.0 else 0.0
+    elif pattern == "cap":
+        # El cap avança fins a la seva posicio de combat i alli es balanceja
+        # al voltant de la fila on ha neixut (base_y +- amp).
+        stop_x = (1.0 - s_w_n(t["sprite"])
+                  - BOSS_STOP_COLS / SCREEN_WIDTH)
+        dx = 0.0 if enemy["x"] <= stop_x else max(-spd_x,
+                                                  stop_x - enemy["x"])
+        desired = (enemy.get("base_y", enemy["y"])
+                   + enemy.get("amp", 0.08)
+                   * math.sin(0.05 * tick + enemy.get("phase", 0.0)))
+        dy = max(-step_y, min(step_y, desired - enemy["y"]))
     else:                                        # "recta" i desconeguts
         dx, dy = -spd_x, 0.0
 
@@ -1256,7 +1292,8 @@ def render(state: dict) -> str:
         rows.append("".join(parts))
 
     hud = (" " + paint(f"PUNTS {state['score']:5d}", CODE_HUD)
-           + "     " + paint("w/s mou   a/d avanca   ESPAI dispara   q surt",
+           + "     " + paint("w/s mou   a/d avanca   ESPAI dispara   "
+                             f"{KEY_PAUSE} pausa   {KEY_QUIT} surt",
                              CODE_HINT))
 
     # Barra de casc a la part inferior; canvia de color segons la vida restant:
