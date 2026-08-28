@@ -8,7 +8,11 @@ Controls (manten-les premudes; es poden combinar alhora)
 w / s  o fletxes amunt/avall    : moure la nau amunt / avall
 a / d  o fletxes esquerra/dreta : endarrere / endavant (zona esquerra)
 ESPAI                           : disparar (mantenir-lo = tir continu)
+p                               : pausa (P altre cop per continuar, q surt)
 q                               : sortir
+
+Les millors puntuacions (top 5) es guarden a records.json, al costat de
+main.py, i es mostren al menu i a la pantalla de fi de partida.
 
 L'entrada es llegeix per ESTAT (tecla premuda o no) a cada frame, com en
 un joc normal: pots mantenir les tecles premudes i prémer-ne diverses en
@@ -42,6 +46,7 @@ més precisos; nomes en pintar es converteixen a coordenades de pantalla.
 import ctypes   # crides a l'API de Windows: estat del teclat en temps real
 import glob     # trobar els fitxers de nivell nivell_<n>.py
 import importlib.util  # carregar cada nivell des del seu fitxer
+import json      # records persistents (records.json)
 import math     # ones sinusoidals del patro de moviment "ona"
 import os
 import random
@@ -296,6 +301,66 @@ def load_levels() -> tuple:
     return tuple(level for _, level in found)
 
 
+# --- records persistents -------------------------------------------------------
+# Les millors puntuacions viuen a records.json, al costat d'aquest fitxer,
+# com una llista JSON d'objectes {"punts": int, "data": "AAAA-MM-DD"}, sempre
+# retallada als SCORES_KEPT millors. Qualsevol problema (fitxer trencat,
+# sense permisos...) no ha d'impedir jugar: simplement s'ignora.
+SCORES_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                           "records.json")
+SCORES_KEPT = 5
+
+
+def load_scores() -> list:
+    """Llegeix el top de puntuacions; [] si no hi ha fitxer o es illegible."""
+    try:
+        with open(SCORES_FILE, "r", encoding="utf-8") as fh:
+            data = json.load(fh)
+    except (OSError, ValueError):
+        return []
+    if not isinstance(data, list):
+        return []
+    scores = []
+    for item in data:
+        if isinstance(item, dict) and isinstance(item.get("punts"), int):
+            scores.append({"punts": item["punts"],
+                           "data": str(item.get("data", ""))})
+    scores.sort(key=lambda s: s["punts"], reverse=True)
+    return scores[:SCORES_KEPT]
+
+
+def save_score(points: int) -> bool:
+    """Afegeix una puntuacio al top si hi cap; cert si es la millor de tots.
+
+    Una puntuacio no positiva no es desa. Retorna cert nomes si, despres de
+    la insercio, queda com la mes alta de la llista (o si es la primera que
+    es desa mai).
+    """
+    if not isinstance(points, int) or points <= 0:
+        return False
+    scores = load_scores()
+    today = time.strftime("%Y-%m-%d")
+    scores.append({"punts": points, "data": today})
+    scores.sort(key=lambda s: s["punts"], reverse=True)
+    del scores[SCORES_KEPT:]
+    best = scores[0]["punts"] if scores else 0
+    try:
+        with open(SCORES_FILE, "w", encoding="utf-8") as fh:
+            json.dump(scores, fh, ensure_ascii=False, indent=1)
+    except OSError:
+        return False
+    return points >= best
+
+
+def scores_block() -> str:
+    """Texte del top 5 (sense colors) per a menus i pantalles finals."""
+    scores = load_scores()
+    if not scores:
+        return " Encara no hi ha puntuacions desades."
+    return "\n".join(f" {i:>2}. {s['punts']:6d} pts  {s['data']}"
+                     for i, s in enumerate(scores, start=1))
+
+
 MAPS = load_levels()
 CURRENT_MAP = 0
 # --- colors ANSI --------------------------------------------------------------
@@ -402,6 +467,7 @@ KEY_BACK = "a"
 KEY_FORWARD = "d"
 KEY_QUIT = "q"
 KEY_REPLAY = "r"
+KEY_PAUSE = "p"
 
 # --- accions canòniques del joc --------------------------------------------
 # El bucle de joc no treballa amb caràcters sinó amb ACCIONS: a cada frame
@@ -414,6 +480,7 @@ ACTION_FORWARD = "forward"
 ACTION_SHOOT = "shoot"
 ACTION_QUIT = "quit"
 ACTION_REPLAY = "replay"
+ACTION_PAUSE = "pause"
 
 X, Y = 0, 1                    # índexos d'un parell [x, y]
 
@@ -582,6 +649,7 @@ _KEY_ACTIONS = (
     (0x44, ACTION_FORWARD),   # D
     (0x27, ACTION_FORWARD),   # fletxa dreta
     (0x20, ACTION_SHOOT),     # barra espaiadora
+    (0x50, ACTION_PAUSE),     # P
     (0x51, ACTION_QUIT),      # Q
     (0x52, ACTION_REPLAY),    # R
 )
@@ -612,6 +680,7 @@ def _pressed_keys_fallback():
         KEY_UP: ACTION_UP, KEY_DOWN: ACTION_DOWN,
         KEY_BACK: ACTION_BACK, KEY_FORWARD: ACTION_FORWARD,
         " ": ACTION_SHOOT, KEY_QUIT: ACTION_QUIT, KEY_REPLAY: ACTION_REPLAY,
+        KEY_PAUSE: ACTION_PAUSE,
     }
     while msvcrt.kbhit():
         ch = msvcrt.getwch()
@@ -1298,7 +1367,13 @@ def show_intro() -> None:
     print(paint(f"     {KEY_BACK}/{KEY_FORWARD} o fletxes  endarrere / endavant",
                 CODE_HINT))
     print(paint("     ESPAI   disparar (manten-lo premut = tir continu)", CODE_HINT))
+    print(paint(f"     {KEY_PAUSE}       pausa ({KEY_PAUSE} altre cop per continuar)",
+                CODE_HINT))
     print(paint(f"     {KEY_QUIT}       sortir", CODE_HINT))
+    print()
+    print(paint("   MILLORS PUNTUACIONS", CODE_HUD))
+    for line in scores_block().splitlines():
+        print(paint(line, CODE_HUD))
     print()
     print("   Manten premudes les tecles: el joc respon mentre estan actives")
     print("   i en pots combinar diverses alhora.")
@@ -1324,22 +1399,33 @@ def show_intro() -> None:
     wait_key()
 
 
-def show_game_over(score: int, completed: bool = False) -> None:
+def show_game_over(score: int, completed: bool = False,
+                   record: bool = False) -> None:
     """Pantalla de fi de partida, per derrota o per mapa completat."""
     print()
     if completed:
         print(paint(f" NIVELL COMPLETAT - puntuacio final: {score}", "92"))
     else:
         print(paint(f" GAME OVER - puntuacio final: {score}", CODE_ALERT))
+    if record:
+        print(paint(" NOU RECORD!", "93"))
+    print(paint("   MILLORS PUNTUACIONS", CODE_HUD))
+    for line in scores_block().splitlines():
+        print(paint(line, CODE_HUD))
     print(paint(f" Prem '{KEY_REPLAY}' per tornar a jugar, o qualsevol altra "
                 f"tecla per sortir.", CODE_HINT))
 
 
-def show_campaign_complete(score: int) -> None:
+def show_campaign_complete(score: int, record: bool = False) -> None:
     """Pantalla de victoria quan s'acaba l'ultim nivell de la campanya."""
     print()
     print(paint(" CAMPANYA COMPLETADA!", "92"))
     print(paint(f" Puntuacio final: {score}", CODE_HUD))
+    if record:
+        print(paint(" NOU RECORD!", "93"))
+    print(paint("   MILLORS PUNTUACIONS", CODE_HUD))
+    for line in scores_block().splitlines():
+        print(paint(line, CODE_HUD))
     print(paint(f" Prem '{KEY_REPLAY}' per repetir la campanya des del "
                 f"principi, o qualsevol altra tecla per sortir.", CODE_HINT))
 
@@ -1362,9 +1448,6 @@ DEMO_SEED = 1                  # llavor fixa per a drops reproduibles
 DEMO_RENDER_EVERY = 60         # pinta un frame cada N ticks (0 = mai)
 DEMO_MAX_TICKS = 20000         # fusible: cap nivell hauria de durar tant
 DEMO_ENEMY_LOOKAHEAD = 12.0    # celes per davant on un enemic es amenaça
-DEMO_NEAR_CELLS = 3.0          # celes al voltant de la columna de la nau on
-                               # qualsevol enemic es perill imminent (dispara
-                               # apuntat des de qualsevol alçada)
 DEMO_SHOT_PREDICT = 80         # ticks de trajectoria de tret que es prediu
                                # (el vol sencer: la ruta es fixa en disparar)
 DEMO_WALL_AHEAD = 16.0         # columnes per davant que cal tenir en compte
@@ -1397,6 +1480,29 @@ def _corridor_free_band(state: dict):
     if not found:
         return None
     return lo, hi
+
+
+def _ticks_until_wall(state: dict, sr):
+    """Ticks fins que la propera columna de paret arribi al morro, o None.
+
+    Les parets avancen 1 cel·la per tick cap a l'esquerra i la nau del pilot
+    no avança: la distancia en cel·les fins a la columna mes propera que
+    encara no hem depassat ES el nombre de ticks disponibles.
+    """
+    nose = sr[0] + sr[2]
+    x_w = 1.0 / SCREEN_WIDTH
+    nearest = None
+    for column in state["terrain"]:
+        if column["top"] == 0 and column["bot"] == 0:
+            continue
+        if column["x"] + x_w <= sr[0]:
+            continue                       # ja la tenim a sobre o enrrera
+        d = (column["x"] - nose) / x_w
+        if nearest is None or d < nearest:
+            nearest = d
+    if nearest is None:
+        return None
+    return max(0.0, nearest)
 
 
 def _shot_threat(state: dict, sr):
@@ -1510,6 +1616,20 @@ def demo_actions(state: dict) -> set:
     elif dy > 0.5 / SCREEN_HEIGHT:
         actions.add(ACTION_DOWN if state["player_y"] < max_y else ACTION_UP)
 
+    # Retirada horitzontal: si la paret propera demana una posicio vertical
+    # que la nau no assolira a temps (descens a 1 fila/tick contra paret a
+    # 1 columna/tick), ENDARRERE: la nau es 3.5 cops mes rapida en horitzontal
+    # i aixi guanya els ticks que li falten per posicionar-se al corredor.
+    if band is not None:
+        c_lo = band[0] + sr[3] / 2.0
+        c_hi = band[1] - sr[3] / 2.0
+        if not c_lo - 1e-9 <= ship_cy <= c_hi + 1e-9:
+            rows_needed = max(c_lo - ship_cy, ship_cy - c_hi) * SCREEN_HEIGHT
+            ticks_to_wall = _ticks_until_wall(state, sr)
+            if (ticks_to_wall is not None
+                    and rows_needed + 0.75 >= ticks_to_wall):
+                actions.add(ACTION_BACK)
+
     # Dispara si hi ha qualsevol enemic per davant del morro.
     for enemy in state["enemies"]:
         ex, _ey, _ew, _eh = enemy_rect(enemy)
@@ -1522,6 +1642,27 @@ def demo_actions(state: dict) -> set:
 # --------------------------------------------------------------------------- #
 # Bucle principal                                                             #
 # --------------------------------------------------------------------------- #
+def pause_round(state: dict) -> bool:
+    """Pausa el joc fins que el jugador la continuï o surti.
+
+    Bloqueja esperant una pulsacio nova: 'p' continua (un cop la tecla esta
+    fisicament alliberada, per no tornar a pausar a l'instant) i 'q' surt.
+    Retorna True per continuar la partida o False per abandonar-la.
+    """
+    print(paint(f" PAUSA - prem '{KEY_PAUSE}' per continuar, "
+                f"'{KEY_QUIT}' per sortir", CODE_HINT))
+    while True:
+        ch = wait_key()
+        if ch == KEY_QUIT:
+            return False
+        if ch == KEY_PAUSE:
+            # No reprenem mentre 'p' segueixi fisicament premuda: amb
+            # GetAsyncKeyState tornaria a pausar a l'instant.
+            while ACTION_PAUSE in pressed_keys():
+                time.sleep(0.02)
+            return True
+
+
 def run_round():
     """Juga una ronda completa.
 
@@ -1542,6 +1683,10 @@ def run_round():
 
         if ACTION_QUIT in actions:
             return "quit", state["score"]
+        if ACTION_PAUSE in actions and not DEMO_MODE:
+            if not pause_round(state):
+                return "quit", state["score"]
+            _first_frame = True          # repinta sencera: esborra el texte de pausa
 
         # Moviment combinable: dx i dy són independents (permet diagonals);
         # move_player ja s'encarrega dels límits de la zona.
@@ -1653,6 +1798,7 @@ def main() -> None:
                 break                       # campanya acabada, derrota o fusible
             if outcome == "quit":
                 break
+            record = save_score(score)     # desa al top (no en demo)
             if outcome == "completed" and CURRENT_MAP + 1 < len(MAPS):
                 # Nivell superat i en queden mes: la campanya continua amb el
                 # seguent fitxer de nivell. En premer 'r' es mostra la
@@ -1671,9 +1817,9 @@ def main() -> None:
                 continue
             if outcome == "completed":
                 # Era l'ultim nivell de la campanya.
-                show_campaign_complete(score)
+                show_campaign_complete(score, record)
             else:
-                show_game_over(score)
+                show_game_over(score, record=record)
             if wait_key() != KEY_REPLAY:
                 break
             if outcome == "completed":

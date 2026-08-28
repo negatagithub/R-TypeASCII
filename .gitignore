@@ -14,3 +14,6 @@ Desktop.ini
 
 # Còpies de seguretat
 *.bak
+
+# Dades locals del joc (generades en jugar)
+records.json

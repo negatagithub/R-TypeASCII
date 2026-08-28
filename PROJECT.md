@@ -20,7 +20,7 @@ de canvis.
 | `PROJECT.md` | Aquest document |
 | `PROJECT_SUMMARY.md` | Resum de disseny original (històric) |
 | `_test_terreny.py` | Suite de proves headless (12 blocs): `python _test_terreny.py` |
-| `test_smoke.py` | Suite antiga de les primeres iteracions; conserva 17 FALLs documentats per drift (vegeu §6) |
+| `test_smoke.py` | Suite headless del motor (15 blocs): `python test_smoke.py` (codi d'exit 0/1) |
 
 ## 2. El motor (`main.py`)
 

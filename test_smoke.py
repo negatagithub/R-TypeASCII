@@ -8,10 +8,13 @@ d'exit (0 = tot be, 1 = hi ha fallides).
 """
 import contextlib
 import io
+import json
 import math
+import os
 import random
 import re
 import sys
+import tempfile
 
 import main as g
 
@@ -543,6 +546,51 @@ st["terrain"].append({"x": col(16), "top": 8, "bot": 0,
                       "edge": ("#", "91"), "fill": ("%", "90")})
 check("demo ducks under a top wall",
       g.demo_actions(st) == {g.ACTION_DOWN})
+
+# --- 15. records persistents i pausa --------------------------------------------
+import tempfile  # aillat: els tests no han de tocar el records.json real
+import os as _os
+
+check("pause key is p", g.KEY_PAUSE == "p"
+      and (0x50, g.ACTION_PAUSE) in g._KEY_ACTIONS)
+
+# Taula aillada en fitxer temporal (mai el records.json de debó).
+old_file = g.SCORES_FILE
+g.SCORES_FILE = _os.path.join(tempfile.mkdtemp(), "records_test.json")
+try:
+    check("empty table reads as no scores", g.load_scores() == [])
+    check("best flag on first save", g.save_score(100) is True)
+    check("non-best is not flagged", g.save_score(50) is False)
+    check("new best is flagged", g.save_score(200) is True)
+    check("table sorted descending",
+          [s["punts"] for s in g.load_scores()] == [200, 100, 50])
+    for pts in (10, 20, 30, 40):                # omplim fins a 6 entrades
+        g.save_score(pts)
+    kept = g.load_scores()
+    check("table capped at five", len(kept) == 5)
+    check("cap keeps the highest", kept[0]["punts"] == 200)
+    check("cap drops the lowest", 10 not in [s["punts"] for s in kept])
+    with open(g.SCORES_FILE, encoding="utf-8") as fh:
+        check("stored file is valid json",
+              isinstance(json.load(fh), list))
+    g.save_score(0)                             # no positiva: no es desa
+    g.save_score(-5)
+    check("non-positive scores ignored", len(g.load_scores()) == 5)
+    with open(g.SCORES_FILE, "w", encoding="utf-8") as fh:
+        fh.write("{json trencat")
+    check("corrupted file reads as empty", g.load_scores() == [])
+    check("save recovers from corruption", g.save_score(75) is True
+          and [s["punts"] for s in g.load_scores()] == [75])
+    block = g.scores_block()
+    check("scores block shows rows", "1." in block and "75" in block)
+    # Pausa: 'p' continua, 'q' surt (teclat simulat; en tests no hi ha
+    # GetAsyncKeyState, aixi que la tecla es considera alliberada de seguida).
+    g.wait_key = lambda: "p"
+    check("pause resumes with p", g.pause_round(g.new_state()) is True)
+    g.wait_key = lambda: "q"
+    check("pause quits with q", g.pause_round(g.new_state()) is False)
+finally:
+    g.SCORES_FILE = old_file
 
 # --- resum ----------------------------------------------------------------------
 print()

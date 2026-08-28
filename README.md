@@ -33,6 +33,7 @@ python main.py [nivell]
 | `w` / `s` o fletxes ↑ ↓ | Moure la nau amunt / avall |
 | `a` / `d` o fletxes ← → | Moure la nau endarrere / endavant |
 | `ESPAI` | Disparar (mantenir-lo premut = tir continu) |
+| `p` | Pausa: congela la partida; `p` altre cop continua, `q` surt |
 | `q` | Sortir |
 | `r` | Continuar (repetir després del game over, o passar al nivell següent) |
 
@@ -80,6 +81,15 @@ complet del joc al terminal o a la CI.
   vermell que restaura casc en tocar-lo amb la nau. Hi ha tres mides:
   petit (+15), mitja (+30) i gran (+60); com mes vida retorna, mes gran
   es el kit i mes raro cau.
+- **Pausa** — la tecla `p` congela la partida en qualsevol moment (els
+  enemics, els projectils i el temps del mapa s'aturen); `p` torna a
+  engegar-la i `q` surt directament. No repren si la tecla segueix
+  fisicament premuda, per evitar una pausa instantania al tornar.
+- **Records persistents** — les puntuacions finals es desan al fitxer
+  `records.json` (ignorat per Git) i el **top 5** es mostra al menu
+  d'introduccio i a les pantalles de fi de partida, amb un `NOU RECORD!`
+  destacat quan la puntuacio es la millor de totes. Si el fitxer esta
+  trencat o no es pot escriure, el joc continua sense queixar-se.
 - **Dron aliat (el mes rar)** — aquest kit desplega un mini-dron (`->`)
   que seguia l'estela de la nau i dispara un projectil addicional cada
   cop que dispres. Maxim 4 drons; si en reps un amb l'esquadra plena,
@@ -191,7 +201,7 @@ R-TypeASCII/
 ## Idees futures
 
 Mes tipus d'enemics (inclosos enemics que disparin), patrons de moviment,
-vides, rècords persistents, efectes de so, nivells de dificultat i enemics
+vides, efectes de so, nivells de dificultat i enemics
 finals — vegeu la secció *Future Enhancements* de
 [`PROJECT_SUMMARY.md`](PROJECT_SUMMARY.md).
 
@@ -200,6 +210,28 @@ finals — vegeu la secció *Future Enhancements* de
 Format basat en [Keep a Changelog](https://keepachangelog.com/ca/1.1.0/);
 versionat amb [SemVer](https://semver.org/lang/ca/) i etiquetat a Git
 (`vX.Y.Z`, branca `main`).
+
+### [v0.3.0] — 2026-08-28
+
+#### Afegit
+- **Pausa en partida** (tecla `p`): congela el bucle amb un rètol PAUSA;
+  `p` repren (esperant que la tecla es deixi anar, per no re-pausar a
+  l'instant amb `GetAsyncKeyState`) i `q` surt directament. No té efecte
+  en el mode demo.
+- **Records persistents** (`records.json`, top 5, ignorat per Git): cada
+  puntuació final de partida es desa al top (mai a la demo), el menú i les
+  pantalles de fi de partida el mostren, i la millor puntuació de totes
+  s'anuncia amb `NOU RECORD!`. Lectura i escriptura tolerants: un fitxer
+  trencat o sense permisos d'escriptura no impedeix mai jugar.
+- `test_smoke.py`: **bloc 15** de pausa i records: taula aïllada en fitxer
+  temporal (mai el `records.json` de debó), top ordenat i retallat a 5,
+  tolerància a JSON trencat, no-desat de puntuacions no positives i codi
+  de tecla `p`.
+
+#### Docs
+- README: tecla `p` a la taula de controls, mecàniques de pausa i records,
+  estructura de fitxers al dia (`test_smoke.py` ja no és "pendent de
+  modernitzar") i "records persistents" tret de les idees futures.
 
 ### [v0.2.0] — 2026-08-28
 
