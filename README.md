@@ -25,6 +25,7 @@ python main.py [nivell]
 |----------|------------|
 | *(cap)* | Campanya completa, des del nivell 1 |
 | `2` | Comença directament al nivell indicat —útil per provar un nivell concret sense passar pels anteriors; en superar-lo, la campanya continua amb el següent |
+| `--demo [nivell]` | **Mode demo**: un pilot automàtic determinista juga en headless (sense teclat ni esperes); amb nivell, comença allà |
 | `-h` | Mostra l'ús del programa i els nivells disponibles |
 
 | Tecla | Acció |
@@ -45,6 +46,16 @@ diferents i els mes grossos aguantan varios impactes. Quan un enemic toca
 la nau li resta vida al casc segons la seva mida, i la partida s'acaba si
 la barra inferior queda buida. El nivell 1 segueix un mapa temporitzat i
 acaba quan s'han recorregut tots els seus ticks.
+
+### Mode demo
+
+Amb `--demo` la partida la juga sola un **pilot automàtic determinista**
+(llavor fixa: cada execució és idèntica). Va a màxima velocitat —un frame
+pintat de cada 60, cap espera— i una campanya sencera dura un parell de
+segons. La política del pilot: col·locar-se al corredor lliure que imposen
+les parets properes, esquivar-hi (sense sortir-ne) el tret o enemic més
+proper, i disparar quan té algú per davant. S'usa per fumigar el bucle
+complet del joc al terminal o a la CI.
 
 ## Mecàniques
 
@@ -193,9 +204,20 @@ versionat amb [SemVer](https://semver.org/lang/ca/) i etiquetat a Git
 ### [v0.2.0] — 2026-08-28
 
 #### Afegit
+- **Mode demo** (`python main.py --demo [nivell]`): un **pilot automàtic
+  determinista** (llavor fixa `DEMO_SEED`) juga la partida en headless, a
+  màxima velocitat (un frame de cada 60, cap espera) — una campanya sencera
+  dura ~2 segons. Política: situar-se al corredor que imposen les parets
+  properes (intersecció de les franges lliures), esquivar-hi —sense sortir-
+  n'en— el tret o enemic més proper i disparar quan té objectiu. Pot morir i
+  repetir nivell (així fuma també el game over i el reinici); el codi d'exit
+  només falla si el motor s'encalla (fusible `DEMO_MAX_TICKS`).
+- `test_smoke.py`: **bloc 14** del pilot automàtic (arguments `--demo`,
+  determinisme, inactivitat sense amenaces i esquiva sota una paret).
 - **Integració contínua** amb GitHub Actions (`.github/workflows/tests.yml`):
   a cada push i pull request s'executen les dues suites headless sobre
-  Python 3.8–3.12 en `windows-latest`.
+  Python 3.8–3.12 en `windows-latest`, més una fumigació del bucle complet
+  amb `python main.py --demo`.
 - **Llicència MIT** ([LICENSE](LICENSE)) i plantilles d'issues
   (`.github/ISSUE_TEMPLATE/`).
 - `test_smoke.py`: nou **bloc 13 de drons aliats** (wingmans): unió a

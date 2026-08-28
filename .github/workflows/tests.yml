@@ -27,3 +27,6 @@ jobs:
 
       - name: Suite del terreny (_test_terreny.py)
         run: python _test_terreny.py
+
+      - name: Fumigacio del bucle complet (mode demo)
+        run: python main.py --demo
