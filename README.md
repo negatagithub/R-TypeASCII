@@ -1,5 +1,8 @@
 # R-Type ASCII
 
+[![Proves](https://github.com/negatagithub/R-TypeASCII/actions/workflows/tests.yml/badge.svg)](https://github.com/negatagithub/R-TypeASCII/actions/workflows/tests.yml)
+[![Llicència: MIT](https://img.shields.io/badge/lic%C3%A8ncia-MIT-blue.svg)](LICENSE)
+
 Prototip del clàssic arcade shooter **R-Type**, renderitzat íntegrament en
 ASCII art dins del terminal de Windows, amb **orientació horitzontal**: la
 nau navega per l'esquerra mentre els enemics arriben volant des de la dreta.
@@ -126,7 +129,7 @@ Tots els paràmetres del joc són a l'inici de [`main.py`](main.py):
 | Constant | Per defecte | Significat |
 |----------|-------------|------------|
 | `MIN_WIDTH` / `MIN_HEIGHT` | 40 x 10 | Mida mínima del camp de joc |
-| `PLAYER_ZONE_FRACTION` | 0.33 | Fracció de pantalla on es pot moure la nau |
+| `PLAYER_ZONE_FRACTION` | 1.0 | Fracció de pantalla navegable (1.0 = tot el camp) |
 | `PLAYER_HORIZONTAL_SPEED` | 3.5 | Velocitat horitzontal de la nau, en cel·les/tick |
 | `SHOT_SPEED` | 5.0 | Velocitat dels projectils del jugador, en cel·les/tick |
 | `SHOT_COOLDOWN_TICKS` | 2 | Ticks entre dispars consecutius |
@@ -148,8 +151,10 @@ R-TypeASCII/
 ├── README.md             # Documentació d'usuari (aquest fitxer)
 ├── PROJECT.md            # Documentació tècnica del projecte
 ├── PROJECT_SUMMARY.md    # Resum de disseny original (històric)
-├── _test_terreny.py      # Suite headless de proves (12 blocs)
-└── test_smoke.py         # Suite antiga (pendent de modernitzar)
+├── _test_terreny.py      # Suite headless de proves del terreny (12 blocs)
+├── test_smoke.py          # Suite headless de proves del motor (106 comprovacions)
+├── LICENSE                # Llicència MIT
+└── .github/               # CI (GitHub Actions) i plantilles d'issues
 ```
 
 ## Notes de desenvolupament
@@ -175,6 +180,49 @@ R-TypeASCII/
 ## Idees futures
 
 Mes tipus d'enemics (inclosos enemics que disparin), patrons de moviment,
-power-ups, vides, rècords persistents, efectes de so, nivells de dificultat
-i enemics finals — vegeu la secció *Future Enhancements* de
+vides, rècords persistents, efectes de so, nivells de dificultat i enemics
+finals — vegeu la secció *Future Enhancements* de
 [`PROJECT_SUMMARY.md`](PROJECT_SUMMARY.md).
+
+## Registre de canvis
+
+Format basat en [Keep a Changelog](https://keepachangelog.com/ca/1.1.0/);
+versionat amb [SemVer](https://semver.org/lang/ca/) i etiquetat a Git
+(`vX.Y.Z`, branca `main`).
+
+### [v0.2.0] — 2026-08-28
+
+#### Afegit
+- **Integració contínua** amb GitHub Actions (`.github/workflows/tests.yml`):
+  a cada push i pull request s'executen les dues suites headless sobre
+  Python 3.8–3.12 en `windows-latest`.
+- **Llicència MIT** ([LICENSE](LICENSE)) i plantilles d'issues
+  (`.github/ISSUE_TEMPLATE/`).
+- `test_smoke.py`: nou **bloc 13 de drons aliats** (wingmans): unió a
+  l'esquadra, tir addicional, estela i conversió en punts bonus quan la
+  esquadra és plena.
+- `test_smoke.py`: **codi d'exit** (0 = tot bé, 1 = fallides), imprescindible
+  per a la CI.
+
+#### Corregit
+- `test_smoke.py` **aïlla l'estat dels nivells**: `update_world()` ja no
+  executa els spawns ni el terreny de `nivell_<n>.py` dins dels tests
+  (contaminava les assercions amb enemics i parets del mapa real).
+- **Suite modernitzada**: 21 comprovacions obsoletes alineades amb la
+  mecànica vigent (velocitats de nau 3,5 i tret 5 cel·les/tick, navegació
+  per tot el camp, efectes centrats al punt d'impacte, sprites multicolor,
+  centres dels kits). Resultat: **106/106 PASS** (abans 75 PASS / 21 FAIL).
+
+#### Docs
+- README: estat real de les suites, taula de constants i estructura de
+  fitxers actualitzats; badges d'estat de CI i llicència.
+
+### [v0.1.0] — 2026-08-28
+
+- Primera versió pública: motor complet (campanya, terreny, kits, drons
+  aliats, colors ANSI), nivells 1 i 2, suites headless de proves i
+  documentació.
+
+## Llicència
+
+Distribuït sota la [llicència MIT](LICENSE).

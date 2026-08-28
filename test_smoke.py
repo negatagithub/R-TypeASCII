@@ -1,4 +1,11 @@
-"""Test headless temporal per a main.py (s'esborra despres de validar)."""
+"""Suite de proves headless del motor (main.py): logica pura sense terminal.
+
+No toca la consola real: desactiva els spawns aleatoris, el teclat i els
+sleeps, fixa un camp 60x18 i ailla cada estat del mapa de nivell (cap spawn
+ni terreny dels fitxers nivell_<n>.py no pot contaminar els tests).
+Sortida: una linia PASS/FAIL per comprovacio i, al final, el resum amb codi
+d'exit (0 = tot be, 1 = hi ha fallides).
+"""
 import contextlib
 import io
 import math
@@ -39,8 +46,16 @@ orig_new_state = g.new_state
 
 
 def quiet(px, py, enemies=None):
-    """Estat amb spawn aleatori desactivat i posicio normalitzada controlada."""
+    """Estat amb spawn aleatori desactivat i posicio normalitzada controlada.
+
+    Tambe ailla l'estat dels fitxers de nivell: sense aixo, update_world()
+    executaria els spawns i el terreny de nivell_<n>.py dins del test (p. ex.
+    un dron del mapa apareixia al tick 2 i trencaria qualsevol assercio del
+    tipus "enemies == []").
+    """
     st = orig_new_state()
+    st["map"] = {"name": "TEST", "duration": 10 ** 9,
+                 "spawns": (), "terrain_events": ()}
     st["spawn_chance"] = 0.0
     st["player_x"], st["player_y"] = px, py
     if enemies is not None:
@@ -100,7 +115,8 @@ check("move up one row step", isclose(st["player_y"], 0.5 - 1 / 18))
 g.move_player(st, dy=+1)
 check("move down one row step", isclose(st["player_y"], 0.5))
 g.move_player(st, dx=-1)
-check("move back one col step", isclose(st["player_x"], 0.5 - 1 / 60))
+check("move back one col step",
+      isclose(st["player_x"], 0.5 - g.PLAYER_HORIZONTAL_SPEED / 60))
 g.move_player(st, dx=+1)
 check("move forward one col step", isclose(st["player_x"], 0.5))
 st = quiet(0.5, 0.0)
@@ -112,7 +128,8 @@ g.move_player(st, dy=+1)
 check("clamped so sprite fits bottom", isclose(st["player_y"], maxy))
 st = quiet(0.9, 0.5)
 g.move_player(st, dx=+1)
-check("forward capped at left zone", isclose(st["player_x"], g.PLAYER_ZONE_FRACTION))
+check("forward capped at right edge",
+      isclose(st["player_x"], 1.0 - g.s_w_n(g.PLAYER_SPRITE)))
 
 # --- 4. dispar, cooldown i viatge de projectils ------------------------------
 st = quiet(0.3, 0.5)
@@ -128,7 +145,8 @@ check("cooldown blocks spamming", len(st["shots"]) == 1)
 st = quiet(0, 0)
 st["shots"] = [{"x": col(10), "y": row(3)}]
 g.update_world(st)
-check("shot advances one column", isclose(st["shots"][0]["x"], col(11)))
+check("shot advances SHOT_SPEED columns",
+      isclose(st["shots"][0]["x"], col(10 + int(g.SHOT_SPEED))))
 st["shots"] = [{"x": col(59), "y": row(3)}]
 g.update_world(st)
 check("off-screen shot removed", st["shots"] == [])
@@ -145,10 +163,11 @@ st["shots"] = [{"x": col(19), "y": row(6)}]
 f = mk(FIGHTER, col(22), row(6))
 st["enemies"] = [f]
 g.update_world(st)
-check("approaching shot not yet hitting",
-      len(st["shots"]) == 1 and f["hp"] == 2)
-g.update_world(st)
-check("fighter survives first hit", f["hp"] == 1 and st["score"] == 0)
+# El tret es rapid (SHOT_SPEED celes/tick): creua el cacic en un sol tick,
+# de manera que el solapament i el creuament aterren el mateix cop.
+check("fast shot crosses and lands in one tick",
+      f["hp"] == 1 and st["shots"] == [])
+check("no points until the kill", st["score"] == 0)
 st["shots"] = [{"x": f["x"] - 1 / 60, "y": row(6)}]
 g.update_world(st)
 check("fighter dies on second hit", st["shots"] == [] and st["enemies"] == [])
@@ -181,8 +200,14 @@ check("drone is twice as fast",
       isclose(d["x"], col(38)) and isclose(f["x"], col(39)))
 st = quiet(0, 0)
 st["enemies"] = [mk(DRONE, col(0), row(4))]
-g.update_world(st)
-check("small enemy exits fully", st["enemies"] == [])
+# L'enemic nomes desapareix quan el seu rectangle s'ha sortit del tot:
+# amb el morro dins del camp encara es visible (i colisionable).
+ticks_alive = 0
+while st["enemies"] and ticks_alive < 10:
+    g.update_world(st)
+    ticks_alive += 1
+check("small enemy exits once fully off-screen",
+      st["enemies"] == [] and 0 < ticks_alive <= 10)
 wide = mk(FIGHTER, col(0), row(4))
 st = quiet(0, 0)
 st["enemies"] = [wide]
@@ -218,11 +243,14 @@ field = lines[1:-1]
 check("hud + field + status height", len(lines) == g.SCREEN_HEIGHT + 2)
 check("no escapes when disabled", "\x1b" not in text)
 check("row width consistent", all(len(r) == g.SCREEN_WIDTH for r in field))
-check("ship body drawn at its cell", field[8][3] == "}")
-check("ship nose drawn at its cell", field[8][7] == "=")
-check("drone drawn", field[2][30] == "e")
+# La nau te 3 files: ales a dalt i a baix (col 6) i cos amb morro al mig.
+check("ship top fin drawn at its cell", field[8][6] == "/")
+check("ship body drawn at its cell", field[9][3] == "}")
+check("ship nose drawn at its cell", field[9][7] == "=")
+check("ship keel drawn at its cell", field[10][6] == "\\")
+check("drone drawn", field[2][30] == "<" and field[2][31] == "e")
 check("fighter drawn", field[4][20] == "<" and field[5][22] == "~")
-check("cruiser drawn", field[12][24] == "[" and field[12][26] == "#")
+check("cruiser drawn", field[12][24] == "<" and field[13][25] == "#")
 check("shot drawn", field[9][15] == "-")
 g.COLOR_ENABLED = True
 colored = g.render(st)
@@ -232,7 +260,7 @@ for code in ("96", "93", "91", "95", "94", "97"):
 stripped = [strip_ansi(r) for r in clines]
 check("colored widths match after strip",
       all(len(r) == g.SCREEN_WIDTH for r in stripped[1:-1]))
-check("ship cell painted cyan", "\x1b[96m}" in clines[10])
+check("ship cells painted cyan", "\x1b[96m==" in clines[10])
 g.COLOR_ENABLED = False
 
 # --- 8. draw_frame: repintat sense parpalleig ---------------------------------
@@ -261,33 +289,47 @@ st["enemies"] = [mk(DRONE, col(20), row(6))]
 g.update_world(st)
 sparks = [e for e in st["effects"]
           if tuple(e["frames"]) == tuple(g.SPARK_FRAMES)]
-check("small kill makes two sparks", len(sparks) == 2)
+booms = [e for e in st["effects"]
+         if tuple(e["frames"]) == tuple(g.BOOM_FRAMES)]
+# El dron (amplada 3) ja arriba al llindar d'explosio gran: espurna de
+# l'impacte + deflagracio al centre de la baixa.
+check("drone kill makes one spark and one boom",
+      len(sparks) == 1 and len(booms) == 1)
 for _ in range(len(g.SPARK_FRAMES)):
     g.update_world(st)
 check("effects fade out completely", st["effects"] == [])
 st = quiet(0, 0)
-st["shots"] = [{"x": col(19), "y": row(6)}]
 fighter = mk(FIGHTER, col(22), row(6))
 st["enemies"] = [fighter]
+st["shots"] = [{"x": col(15), "y": row(6)}]
 g.update_world(st)                       # aproximacio sense contacte
+check("approach does not hit yet",
+      fighter["hp"] == 2 and len(st["shots"]) == 1)
 st["shots"] = [{"x": fighter["x"] - 1 / 60, "y": row(6)}]
 g.update_world(st)                       # primer toc (no letal)
 sparks = [e for e in st["effects"]
           if tuple(e["frames"]) == tuple(g.SPARK_FRAMES)]
-check("non-lethal hit makes one spark", len(sparks) == 1)
-check("spark sits where the shot landed",
-      isclose(sparks[0]["x"], fighter["x"] + 0.0)
-      and isclose(sparks[0]["y"], row(6)))
+check("non-lethal hit makes one spark",
+      len(sparks) == 1 and fighter["hp"] == 1)
+ex, ey, ew, eh = g.enemy_rect(fighter)
+# Amb el creuament, l'espurna cau on aterra el tret: l'efecte es CENTRA a la
+# posicio de l'impacte (per aixo restem mig caracter a l'alçada) i queda dins
+# d'un pas de tret (SHOT_SPEED celes) comptat des del davant de l'enemic.
+check("spark lands within a shot-step of the enemy",
+      isclose(sparks[0]["y"], row(6) - 0.5 / 18)
+      and 0 <= sparks[0]["x"] - (ex + ew) <= g.SHOT_SPEED / 60 + 1e-9)
 st["shots"] = [{"x": fighter["x"] - 1 / 60, "y": row(6)}]
 g.update_world(st)                       # toc letal
 booms = [e for e in st["effects"]
          if tuple(e["frames"]) == tuple(g.BOOM_FRAMES)]
-check("big enemy death makes big boom", len(booms) == 1)
+check("big enemy death makes big boom",
+      len(booms) == 1 and st["enemies"] == [])
 
 # --- 10. patrons de moviment ---------------------------------------------------
 st = quiet(0, 0)
 floor_row = 1.0 - g.s_h_n(g.ENEMY_TYPES[FIGHTER]["sprite"])
 zz = mk(FIGHTER, col(40), floor_row, pattern="zigzag")
+zz["vy"] = 1                            # baixa: la vora l'ha de fer rebotar
 st["enemies"] = [zz]
 g.update_world(st)
 check("zigzag bounces off the floor",
@@ -394,12 +436,16 @@ check("large kit centers on its box",
 orig_roll = g.roll_powerup_drop
 g.roll_powerup_drop = lambda: 2             # sempre cau kit gran
 st = quiet(0, 0)
-st["shots"] = [{"x": col(19), "y": row(6)}]
+st["shots"] = [{"x": col(15), "y": row(6)}]
 fighter = mk(FIGHTER, col(22), row(6))
 st["enemies"] = [fighter]
-g.update_world(st)                          # aproximacio
+g.update_world(st)                          # aproximacio sense contacte
+check("approach leaves hull intact", fighter["hp"] == 2)
 st["shots"] = [{"x": fighter["x"] - 1 / 60, "y": row(6)}]
-g.update_world(st)                          # primer toc
+g.update_world(st)                          # primer toc (no letal)
+check("first hit wounds but drops nothing yet",
+      fighter["hp"] == 1 and st["enemies"] == [fighter]
+      and st["powerups"] == [])
 st["shots"] = [{"x": fighter["x"] - 1 / 60, "y": row(6)}]
 g.update_world(st)                          # toc letal
 kits = st["powerups"]
@@ -411,15 +457,20 @@ g.update_world(st)
 check("large kit heals up to max", st["powerups"] == [] and st["hp"] == g.SHIP_MAX_HP)
 # Kit petit sobre casc mig ple: cura parcial.
 st["hp"] = 50
-st["powerups"].append(g.make_powerup(st["player_x"], st["player_y"], 0))
+# El kit deriva 1 cela abans de comprovar la recollida: el posem ben endins
+# del casc perque el desplacament no el deixi fora de la hitbox.
+st["powerups"].append(g.make_powerup(st["player_x"] + 2 / 60,
+                                     st["player_y"] + 1 / 18, 0))
 g.update_world(st)
 check("small kit heals partially", st["hp"] == 65 and st["powerups"] == [])
 # Un kit llunya no es recull: deriva cap a l'esquerra i expira.
 st["hp"] = g.SHIP_MAX_HP
-st["powerups"].append(g.make_powerup(col(40), row(2), 0))
+kit = g.make_powerup(col(40), row(2), 0)
+st["powerups"].append(kit)
+before_x = kit["x"]                     # make_powerup centra el kit a la cela
 g.update_world(st)
 check("far kit drifts left",
-      isclose(st["powerups"][0]["x"], col(39)) and st["hp"] == g.SHIP_MAX_HP)
+      isclose(kit["x"], before_x - 1 / 60) and st["hp"] == g.SHIP_MAX_HP)
 for _ in range(45):
     g.update_world(st)
 check("drifted kit despawns off-screen", st["powerups"] == [])
@@ -428,11 +479,53 @@ st = quiet(col(3), row(8))
 st["powerups"].append(g.make_powerup(col(20), row(3), 1))
 g.COLOR_ENABLED = True
 kit_lines = g.render(st).splitlines()
-check("medium kit painted red", "\x1b[91m+" in kit_lines[3 + 1])
+check("medium kit painted red",
+      "\x1b[91m+" in kit_lines[2 + 1] and "\x1b[91m+++" in kit_lines[3 + 1]
+      and "\x1b[91m+" in kit_lines[4 + 1])
 g.COLOR_ENABLED = False
 kit_plain = g.render(st).splitlines()
 check("medium kit drawn plain",
-      kit_plain[3 + 1][20] == "+" and kit_plain[4 + 1][19:22] == "+++")
+      kit_plain[2 + 1][19] == "+" and kit_plain[3 + 1][18:21] == "+++"
+      and kit_plain[4 + 1][19] == "+")
 g.roll_powerup_drop = orig_roll
 
-# __P9__
+# --- 13. drons aliats (wingmans) ------------------------------------------------
+check("starts without wingmans", orig_new_state()["wingmans"] == 0)
+st = quiet(col(10), row(8))
+# Kit de dron que solapa amb la nau: s'uneix a l'esquadra (el kit deriva
+# 1 cela abans de la comprobacio, per aixo el centrem una mica endinsat).
+st["powerups"].append(g.make_powerup(st["player_x"] + 4 / 60,
+                                     st["player_y"] + 1 / 18, 3))
+g.update_world(st)
+check("dron kit joins the squadron",
+      st["wingmans"] == 1 and st["powerups"] == [])
+# Cada dron afegeix el seu propi projectil al dispar del jugador.
+g.shoot(st)
+check("wingman fires its own shot", len(st["shots"]) == 2)
+# L'estela: movent la nau cap a la dreta, el dron queda per darrere.
+st = quiet(col(5), row(8))
+for _ in range(6):
+    g.move_player(st, dx=+1)
+    g.update_world(st)
+wx, _wy = g.wingman_position(st, 0)
+check("wingman trails behind a moving ship", wx < st["player_x"] - 1e-9)
+# Esquadra plena: el kit extra es converteix en punts bonus.
+st = quiet(col(10), row(8))
+st["wingmans"] = g.MAX_WINGMANS
+before = st["score"]
+st["powerups"].append(g.make_powerup(st["player_x"] + 4 / 60,
+                                     st["player_y"] + 1 / 18, 3))
+g.update_world(st)
+check("extra dron converts to bonus points",
+      st["wingmans"] == g.MAX_WINGMANS
+      and st["score"] == before + g.WINGMAN_SCORE_BONUS)
+
+# --- resum ----------------------------------------------------------------------
+print()
+if failures:
+    print(f"smoke: {len(failures)} comprovacions fallides:")
+    for name in failures:
+        print("  FALLA:", name)
+    sys.exit(1)
+print("smoke: TOT BE")
+sys.exit(0)
