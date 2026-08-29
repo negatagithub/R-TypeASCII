@@ -248,6 +248,23 @@ WALL_EDGE_DEFAULT = ("#", "37")    # vora (superficie): blanc grisenc
 WALL_FILL_DEFAULT = ("%", "90")    # interior: gris fosc
 MIN_CORRIDOR = 6                   # celes lliures minimes entre parets
 
+# --- terreny dibuixat (art) ----------------------------------------------------
+# Format nou de nivell (el docstring de nivell_4.py es la referencia): el
+# terreny no es descriu amb elevacions sino amb DIBUIX LITERAL a dues capes.
+#   "art"   primer pla: cada caracter de la paleta es SOLID; la col·lisió es
+#           directament la presència/absència de caracter a la cela avaluada.
+#   "fons"  capa de fons: purament estetica (mai col·lisiona i el pilot
+#           l'ignora); avança una columna cada FONS_EVERY ticks, mes lent que
+#           el primer pla, per donar sensacio de profunditat (parallax), i es
+#           repeteix en bucle horitzontal.
+# L'art es dissenya a ART_CANON_H files i es mostreja a l'alçada del terminal
+# amb _art_row(); render, col·lisions i pilot fan servir la MATEIXA funcio,
+# aixi que el que es pinta es exactament el que col·lisiona. La validacio de
+# jugabilitat es fa en espai canonic (la carrega dels nivells passa abans de
+# coneixer la mida real del terminal).
+ART_CANON_H = 20                   # alçada de disseny de l'art, en files
+FONS_EVERY = 4                     # ticks per avançar una columna de fons
+
 
 def _wall_style(segment: dict, index: int):
     """Estil (vora, cos) de la columna `index` d'un segment de terreny."""
@@ -287,8 +304,103 @@ def _normalize_terrain(terrain, source: str) -> tuple:
     return tuple(events)
 
 
+def _normalize_art(art, paleta, source: str, layer: str) -> tuple:
+    """Converteix un dibuix ASCII (files de text) en columnes de cel·les.
+
+    `art` son les files del dibuix (de dalt a baix) i `paleta` mapa cada
+    caracter usat al parell (caracter a pintar, codi ANSI). Retorna una
+    tupla amb UNA entrada per columna del dibuix: una tupla de ART_CANON_H
+    cel·les, on cada cel·la es None (lliure: no pinta res ni col·lisiona)
+    o el parell de la paleta. Regles, validades en carregar el nivell:
+      - exactament ART_CANON_H files i totes amb la mateixa amplada;
+      - nomes s'hi admeten espais i caracters de la paleta (un caracter fora
+        de paleta es gairebe sempre una errata de dibuix: es rebutja).
+    """
+    rows = [str(row) for row in (art or ())]
+    if not rows:
+        raise ValueError(f"{source}: '{layer}' no pot ser buit")
+    width = len(rows[0])
+    if width == 0:
+        raise ValueError(f"{source}: '{layer}' no pot tenir files buides")
+    for i, row in enumerate(rows):
+        if len(row) != width:
+            raise ValueError(f"{source}: '{layer}' fila {i}: amplada "
+                             f"{len(row)} != {width} (totes han de coincidir)")
+    if len(rows) != ART_CANON_H:
+        raise ValueError(f"{source}: '{layer}' ha de tenir {ART_CANON_H} "
+                         f"files (te {len(rows)})")
+    for ch, cell in (paleta or {}).items():
+        if (not isinstance(cell, tuple) or len(cell) != 2
+                or not isinstance(cell[0], str) or len(cell[0]) != 1
+                or not isinstance(cell[1], str)):
+            raise ValueError(f"{source}: paleta de '{layer}': la clau {ch!r} "
+                             f"ha de mapear (caracter, codi ANSI): {cell!r}")
+    columns = [[] for _ in range(width)]
+    for row in rows:
+        for x, ch in enumerate(row):
+            if ch == " ":
+                cell = None
+            else:
+                if paleta is None or ch not in paleta:
+                    raise ValueError(f"{source}: '{layer}' columna {x}: "
+                                     f"caracter fora de paleta: {ch!r}")
+                cell = paleta[ch]
+            columns[x].append(cell)
+    return tuple(tuple(col) for col in columns)
+
+
+def _validate_art_playable(columns, source: str) -> None:
+    """Garanteix que un terreny dibuixat es sempre travessable.
+
+    Comprovacions en espai CANONIC (independents del terminal, perque els
+    nivells es carreguen abans de coneixer la mida real del camp):
+      1. cada columna del dibuix deixa un corredor lliure d'almenys
+         MIN_CORRIDOR celes;
+      2. BFS sobre cel·les lliures: existeix cami de la primera columna a la
+         darrera (descarta túnels segellats i parets que tanquen el pas).
+    El mostreig a la mida del terminal (_art_row) conserva la connectivitat:
+    dues cel·les canoniques veines mai queden separades a pantalla.
+    """
+    width = len(columns)
+    free = [[cell is None for cell in col] for col in columns]
+    for x, col in enumerate(free):
+        best = run = 0
+        for open_cell in col:
+            run = run + 1 if open_cell else 0
+            if run > best:
+                best = run
+        if best < MIN_CORRIDOR:
+            raise ValueError(f"{source}: columna {x} del dibuix sense "
+                             f"corredor lliure de {MIN_CORRIDOR} celes "
+                             f"(maxim {best})")
+    seen = [[False] * ART_CANON_H for _ in range(width)]
+    queue = []
+    for y in range(ART_CANON_H):
+        if free[0][y]:
+            seen[0][y] = True
+            queue.append((0, y))
+    while queue:
+        x, y = queue.pop()
+        if x == width - 1:
+            break                          # cami trobat fins a la darrera
+        for nx, ny in ((x - 1, y), (x + 1, y), (x, y - 1), (x, y + 1)):
+            if (0 <= nx < width and 0 <= ny < ART_CANON_H
+                    and free[nx][ny] and not seen[nx][ny]):
+                seen[nx][ny] = True
+                queue.append((nx, ny))
+    if not any(seen[width - 1]):
+        raise ValueError(f"{source}: el dibuix no te cap cami lliure de la "
+                         f"primera a la darrera columna")
+
+
 def _normalize_level(level, source: str) -> dict:
-    """Valida i normalitza el diccionari LEVEL d'un fitxer de nivell."""
+    """Valida i normalitza el diccionari LEVEL d'un fitxer de nivell.
+
+    Admet dos formats de terreny (mutuament excloents): 'terrain' amb
+    elevacions (vegeu nivell_1.py) o 'art'/'fons' dibuixats (vegeu
+    nivell_4.py). El resultat exposa els dos en forma normalitzada: les
+    columnes d'art ja venen com a cel·les per columna de dibuix.
+    """
     if not isinstance(level, dict):
         raise ValueError(f"{source}: LEVEL ha de ser un diccionari")
     normalized = {
@@ -296,7 +408,21 @@ def _normalize_level(level, source: str) -> dict:
         "duration": int(level["duration"]),
         "spawns": tuple(tuple(spawn) for spawn in level.get("spawns", ())),
         "terrain_events": _normalize_terrain(level.get("terrain", ()), source),
+        "art_columns": None,
+        "fons_columns": None,
     }
+    art = level.get("art")
+    if art:
+        if normalized["terrain_events"]:
+            raise ValueError(f"{source}: 'terrain' i 'art' no poden coexistir")
+        normalized["art_columns"] = _normalize_art(
+            art, level.get("paleta"), source, "art")
+        _validate_art_playable(normalized["art_columns"], source)
+        if level.get("fons"):
+            normalized["fons_columns"] = _normalize_art(
+                level["fons"], level.get("paleta_fons"), source, "fons")
+    elif level.get("fons"):
+        raise ValueError(f"{source}: 'fons' nomes te sentit amb 'art'")
     for spawn in normalized["spawns"]:
         if len(spawn) != 4:
             raise ValueError(f"{source}: cada spawn ha de ser "
@@ -833,7 +959,7 @@ def fit_corridor(top: int, bot: int):
 
 
 def wall_rects(column: dict):
-    """Rectangles hitbox normalitzats d'una columna de paret (dalt i baix)."""
+    """Rectangles hitbox normalitzats d'una columna d'elevacions (dalt/baix)."""
     w = 1.0 / SCREEN_WIDTH
     rects = []
     if column["top"] > 0:
@@ -841,6 +967,65 @@ def wall_rects(column: dict):
     if column["bot"] > 0:
         rects.append((column["x"], 1.0 - column["bot"] / SCREEN_HEIGHT,
                       w, column["bot"] / SCREEN_HEIGHT))
+    return rects
+
+
+def _art_row(y: int) -> int:
+    """Fila de pantalla -> fila canonica de l'art (mostreig mes proper).
+
+    L'art es dissenya a ART_CANON_H files; en terminals d'alçada diferent,
+    cada fila de pantalla mostra la fila canonica equivalent. Render,
+    col·lisions i pilot fan servir AQUESTA mateixa funcio: el que es pinta
+    es exactament el que col·lisiona, mai se'n van de sincronia.
+    """
+    return min(ART_CANON_H - 1, y * ART_CANON_H // SCREEN_HEIGHT)
+
+
+def _column_cells(column: dict) -> tuple:
+    """Cel·les solides per fila de pantalla d'una columna de terreny.
+
+    Es la funcio PIVOT entre els dos formats de columna:
+      - art (clau 'cells'): cel·les canoniques, mostrejades amb _art_row;
+      - elevacions (claus 'top'/'bot'): vora a la superficie, cos a l'interior.
+    Retorna una tupla de SCREEN_HEIGHT entrades: None (lliure) o (caracter,
+    color). Col·lisions, render i pilot hi passen i no coneixen la diferencia.
+    """
+    cells = column.get("cells")
+    if cells is not None:
+        return tuple(cells[_art_row(y)] for y in range(SCREEN_HEIGHT))
+    top = max(0, min(SCREEN_HEIGHT, column["top"]))
+    bot = max(0, min(SCREEN_HEIGHT - top, column["bot"]))
+    out = [None] * SCREEN_HEIGHT
+    for y in range(top):
+        out[y] = column["edge"] if y == top - 1 else column["fill"]
+    for y in range(SCREEN_HEIGHT - bot, SCREEN_HEIGHT):
+        out[y] = column["edge"] if y == SCREEN_HEIGHT - bot else column["fill"]
+    return tuple(out)
+
+
+def terrain_rects(column: dict) -> list:
+    """Rectangles hitbox normalitzats d'una columna de terreny (2 formats).
+
+    Format d'elevacions: com sempre, fins a dos rectangles (franca superior
+    i inferior). Format d'art: UN rectangle per cada tram consecutiu de
+    cel·les solidas, aixi que illes flotants, túnels o sigals donen tants
+    rectangles com trams solidos tingui la columna pintada.
+    """
+    if "cells" not in column:
+        return wall_rects(column)
+    w = 1.0 / SCREEN_WIDTH
+    rects = []
+    run_start = None
+    for y, cell in enumerate(_column_cells(column)):
+        if cell is not None and run_start is None:
+            run_start = y
+        elif cell is None and run_start is not None:
+            rects.append((column["x"], run_start / SCREEN_HEIGHT, w,
+                          (y - run_start) / SCREEN_HEIGHT))
+            run_start = None
+    if run_start is not None:
+        rects.append((column["x"], run_start / SCREEN_HEIGHT, w,
+                      (SCREEN_HEIGHT - run_start) / SCREEN_HEIGHT))
     return rects
 
 
@@ -947,6 +1132,14 @@ def update_world(state: dict) -> None:
             state["terrain"].append({"x": 1.0, "top": top, "bot": bot,
                                      "edge": edge, "fill": fill})
 
+    # --- terreny dibuixat (art): la columna `tick` del dibuix entra per la ---
+    # dreta, una per tick, com amb elevacions (columnes consecutives contigues
+    # per disseny). L'art ja ve validada des del fitxer (corredors d'almenys
+    # MIN_CORRIDOR celes i cami BFS de banda a banda): no cal fit_corridor.
+    art_columns = game_map.get("art_columns")
+    if art_columns is not None and state["ticks"] < len(art_columns):
+        state["terrain"].append({"x": 1.0, "cells": art_columns[state["ticks"]]})
+
     state["map_progress"] = min(1.0, state["ticks"] / game_map["duration"])
     if state["ticks"] >= game_map["duration"]:
         state["completed"] = True
@@ -1014,7 +1207,7 @@ def update_world(state: dict) -> None:
             # Els projectils enemics tampoc travessen la roca.
             if any(rects_overlap(shot["x"], shot["y"], es_w, es_h, *wr)
                    for column in state["terrain"]
-                   for wr in wall_rects(column)):
+                   for wr in terrain_rects(column)):
                 state["effects"].append(make_effect(
                     shot["x"], shot["y"], SPARK_FRAMES))
                 continue
@@ -1064,7 +1257,7 @@ def update_world(state: dict) -> None:
         # mes rapid que l'amplada d'una columna de paret).
         hit_wall = False
         for column in state["terrain"]:
-            for wl, wt, ww, wh in wall_rects(column):
+            for wl, wt, ww, wh in terrain_rects(column):
                 hit = rects_overlap(sx, sy, shot_w, shot_h, wl, wt, ww, wh)
                 if not hit and sy < wt + wh and wt < sy + shot_h:
                     hit = (shot.get("prev_x", sx) <= wl and sx >= wl)
@@ -1182,7 +1375,7 @@ def update_world(state: dict) -> None:
         px, py, pw, ph = sr
         prev_right = state.get("ship_prev_x", px) + pw
         for column in state["terrain"]:
-            for wl, wt, ww, wh in wall_rects(column):
+            for wl, wt, ww, wh in terrain_rects(column):
                 hit = rects_overlap(px, py, pw, ph, wl, wt, ww, wh)
                 if not hit and py < wt + wh and wt < py + ph:
                     hit = (prev_right <= wl and px + pw >= wl)
@@ -1267,13 +1460,20 @@ def draw_powerup(pu: dict) -> None:
 
 
 def draw_terrain_column(column: dict) -> None:
-    """Pinta una columna de paret, enganxada a les vores superior i inferior.
+    """Pinta una columna de terreny (elevacions o art dibuixat).
 
-    La cel·la de la superficie (la que mira al corredor) fa servir l'estil
-    "vora"; la resta de la paret, l'estil "cos".
+    Elevacions: enganxada a les vores, la cel·la de la superficie fa servir
+    l'estil "vora" i la resta l'estil "cos". Art: cada cel·la solida es pinta
+    amb el SEU caracter i color (el dibuix literal ja conte vora i cos).
     """
     cx = cell_x(column["x"])
     if not 0 <= cx < SCREEN_WIDTH:
+        return
+    if "cells" in column:
+        cells = _column_cells(column)
+        for y, cell in enumerate(cells):
+            if cell is not None:
+                _plot(cell[0], cx, y, cell[1])
         return
     top = max(0, min(SCREEN_HEIGHT, column["top"]))
     bot = max(0, min(SCREEN_HEIGHT - top, column["bot"]))
@@ -1284,6 +1484,31 @@ def draw_terrain_column(column: dict) -> None:
         char, code = (column["edge"] if y == SCREEN_HEIGHT - bot
                       else column["fill"])
         _plot(char, cx, y, code)
+
+
+def draw_fons(state: dict) -> None:
+    """Pinta la capa de fons (parallax): la capa mes profunda del camp.
+
+    Purament estetica: mai col·lisiona i el pilot l'ignora. Avança UNA
+    columna cada FONS_EVERY ticks (mes lent que el primer pla, que corre a
+    una per tick: sensacio de profunditat) i el dibuix es repeteix en bucle
+    horitzontal, aixi que una franja curta de cel cobreix un nivell llarg.
+    El render la crida ABANS que res: el primer pla i les entitats li queden
+    al damunt, i els espais de l'art no l'esborren (el cel deixa veure el
+    fons). Sense 'fons' al nivell, no pinta res.
+    """
+    columns = state["map"].get("fons_columns")
+    if not columns:
+        return
+    shift = state["ticks"] // FONS_EVERY
+    width = len(columns)
+    rows_map = [_art_row(y) for y in range(SCREEN_HEIGHT)]
+    for x in range(SCREEN_WIDTH):
+        column = columns[(x + shift) % width]
+        for y, src in enumerate(rows_map):
+            cell = column[src]
+            if cell is not None:
+                _plot(cell[0], x, y, cell[1])
 
 
 def _active_boss(state: dict):
@@ -1303,8 +1528,11 @@ def render(state: dict) -> str:
     _screen = [[" "] * SCREEN_WIDTH for _ in range(SCREEN_HEIGHT)]
     _colors = [[None] * SCREEN_WIDTH for _ in range(SCREEN_HEIGHT)]
 
-    # Ordre de pintat: el terreny es fons (la roca queda a sota de tot),
+    # Ordre de pintat, de mes lluny a mes a prop, tot als buffers _screen /
+    # _colors (el resultat es volcat de cop al final de la funcio): capa de
+    # fons (parallax, estetica), terreny (la roca queda per damunt del fons),
     # despres projectils, enemics, efectes, kits i finalment la nau.
+    draw_fons(state)
     for column in state["terrain"]:
         draw_terrain_column(column)
     for shot in state["shots"]:
@@ -1550,6 +1778,37 @@ DEMO_WALL_AHEAD = 16.0         # columnes per davant que cal tenir en compte
 DEMO_WALL_BEHIND = 2.0         # columnes ja depassades que encara compten
 
 
+def _art_column_band(column: dict, prefer_cy: float):
+    """Franca lliure (lo, hi) d'una columna d'art, en fraccions de pantalla.
+
+    Una columna d'art pot tenir MES D'UNA franca lliure (una illa flotant la
+    parteix en dos). S'escull la que conte `prefer_cy` (on es la nau ara
+    mateix); si cap no la conte, la mes propera i, a igualtat, la mes ampla.
+    Una columna del tot lliure retorna (0.0, 1.0): no restringeix res.
+    """
+    cells = _column_cells(column)
+    runs, run_lo = [], None
+    for y in range(SCREEN_HEIGHT + 1):
+        free = y < SCREEN_HEIGHT and cells[y] is None
+        if free and run_lo is None:
+            run_lo = y                      # comença un run lliure
+        elif not free and run_lo is not None:
+            # el run tanca contra roca o contra el fi de pantalla (sentinella)
+            runs.append((run_lo / SCREEN_HEIGHT, y / SCREEN_HEIGHT))
+            run_lo = None
+    if len(runs) == 1:
+        return runs[0]
+    for lo, hi in runs:
+        if lo <= prefer_cy <= hi:
+            return lo, hi
+
+    def _dist(run):
+        lo, hi = run
+        return (lo - prefer_cy) if prefer_cy < lo else (prefer_cy - hi)
+
+    return min(runs, key=lambda run: (_dist(run), run[0] - run[1]))
+
+
 def _corridor_free_band(state: dict):
     """Banda vertical lliure (lo, hi) imposada per les parets properes.
 
@@ -1557,22 +1816,30 @@ def _corridor_free_band(state: dict):
     (dins DEMO_WALL_AHEAD/DEMO_WALL_BEHIND) i retorna la INTERSECCIO de les
     seves franges lliures: aixi les rampes i esglaons no enganyen, perque la
     banda ja compleix la columna mes exigent. Retorna None si no hi ha cap
-    paret rellevant.
+    paret rellevant. Funciona amb els dos formats: columnes d'elevacions
+    (una franca dalt/baix) i columnes d'art (runs lliures via _art_column_band).
     """
     sr = ship_rect(state)
+    ship_cy = sr[1] + sr[3] / 2.0
     nose = sr[0] + sr[2]
     x_w = 1.0 / SCREEN_WIDTH
     lo, hi, found = 0.0, 1.0, False
     for column in state["terrain"]:
-        if column["top"] == 0 and column["bot"] == 0:
+        art = "cells" in column
+        if not art and column["top"] == 0 and column["bot"] == 0:
             continue                       # columna sense parets
         if column["x"] + x_w <= sr[0] - DEMO_WALL_BEHIND * x_w:
             continue                       # completament enrrera
         if column["x"] > nose + DEMO_WALL_AHEAD * x_w:
             continue                       # encara massa lluny
         found = True
-        lo = max(lo, column["top"] / SCREEN_HEIGHT)
-        hi = min(hi, 1.0 - column["bot"] / SCREEN_HEIGHT)
+        if art:
+            run_lo, run_hi = _art_column_band(column, ship_cy)
+            lo = max(lo, run_lo)
+            hi = min(hi, run_hi)
+        else:
+            lo = max(lo, column["top"] / SCREEN_HEIGHT)
+            hi = min(hi, 1.0 - column["bot"] / SCREEN_HEIGHT)
     if not found:
         return None
     return lo, hi
@@ -1589,7 +1856,10 @@ def _ticks_until_wall(state: dict, sr):
     x_w = 1.0 / SCREEN_WIDTH
     nearest = None
     for column in state["terrain"]:
-        if column["top"] == 0 and column["bot"] == 0:
+        if "cells" in column:
+            if all(cell is None for cell in column["cells"]):
+                continue                   # columna d'art del tot lliure
+        elif column["top"] == 0 and column["bot"] == 0:
             continue
         if column["x"] + x_w <= sr[0]:
             continue                       # ja la tenim a sobre o enrrera

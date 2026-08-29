@@ -111,8 +111,11 @@ la mida del terminal:
 | `duration` | Ticks totals; la ronda acaba en arribar-hi |
 | `spawns` | Tuples `(tick, tipus 0/1/2, fila 0..1, patró)` |
 | `terrain` | Segments de paret (vegeu 3.3); opcional |
+| `art` + `paleta` | Dibuix literal del terreny (vegeu 3.4); opcional, exclusiu amb `terrain` |
+| `fons` + `paleta_fons` | Capa de fons decorativa amb parallax (vegeu 3.4); opcional |
 
-Documentació completa del format al docstring de `nivell_1.py`.
+Documentació completa del format antic (elevacions) al docstring de
+`nivell_1.py`; la del format dibuixat (art i fons), al de `nivell_4.py`.
 
 ### 3.3 Terreny per elevacions
 - Cada segment defineix `"tick"` (quan la primera columna entra per la
@@ -127,6 +130,38 @@ Documentació completa del format al docstring de `nivell_1.py`.
   `MIN_CORRIDOR = 6` cel·les lliures (protegeix terminals petits).
 - `wall_rects()` dona les hitbox normalitzades;
   `draw_terrain_column()` pinta la columna com a fons.
+
+### 3.4 Terreny dibuixat (art i fons)
+- Format nou (referència: docstring de `nivell_4.py`): el terreny és un
+  dibuix literal de `ART_CANON_H = 20` files; CADA columna del dibuix és una
+  columna del nivell i entra per la dreta al seu tick (1 cel·la/tick, com amb
+  elevacions; cap `fit_corridor`: la validació ja garanteix el pas).
+- `paleta` mapa cada caràcter del dibuix a `(caràcter, color ANSI)`; l'espai
+  és cel·la lliure. TOT caràcter de la paleta és sòlid: **la col·lisió és la
+  presència/absència de caràcter** a la cela avaluada.
+- `_normalize_art()` valida mides (files iguals, `ART_CANON_H`) i paleta, i
+  converteix el dibuix en cel·les per columna (`None` = lliure);
+  `_validate_art_playable()` comprova corredor mínim (`MIN_CORRIDOR`) per
+  columna i un camí BFS de banda a banda, en espai canònic (la càrrega passa
+  abans de conèixer el terminal real).
+- `_art_row(y)` mostreja la fila canònica a la fila de pantalla
+  (nearest-neighbor): render, col·lisions i pilot fan servir LA MATEIXA
+  funció, així que el que es pinta és exactament el que col·lisiona.
+- `_column_cells()` és el pivot entre formats: retorna cel·les per fila de
+  pantalla tant d'una columna d'art com d'una d'elevacions; `terrain_rects()`
+  n'extreu hitboxes per trams sòlids (illes flotants i túnels donen tants
+  rectangles com trams tingui la columna). Els tres punts de col·lisió
+  (nau, trets del jugador i trets enemics) l'usen.
+- `fons` + `paleta_fons`: mateixa estructura, capa PURAMENT decorativa;
+  avança 1 columna cada `FONS_EVERY = 4` ticks i es repeteix en bucle
+  horitzontal (`draw_fons()`, primer pintor del `render()`). Mai col·lisiona
+  i els espais del primer pla la deixen veure.
+- Pilot automàtic: `_art_column_band()` calcula els RUNS lliures d'una
+  columna d'art (illes flotants en parteixen) i tria el que conté la nau;
+  `_corridor_free_band()` i `_ticks_until_wall()` entenen els dos formats i
+  ignoren el fons.
+- Eina d'autoria: `eines_art.py` (valida el nivell i previsualitza l'art amb
+  colors sense jugar).
 
 ### 3.4 Figures auxiliars (definides a cada fitxer de nivell)
 - `bump(h)`: perfil triangular 1..h..1 (amplada 2h−1).
@@ -180,6 +215,26 @@ final amb cristall).
 - `test_smoke.py` desactualitzat (vegeu §5).
 
 ## 7. Registre de canvis
+
+### 2026-08-30
+- **Terreny dibuixat (art)**: nou format de nivell amb dibuix literal a 20
+  files; la col·lisió és la presència/absència de caràcter a la cela;
+  validació en carregar (corredor mínim per columna + camí BFS de banda a
+  banda); nous `_normalize_art()`, `_validate_art_playable()`,
+  `_column_cells()`, `terrain_rects()`, `_art_row()`.
+- **Fons amb parallax**: capa decorativa (`fons` + `paleta_fons`) que avança
+  1 columna cada `FONS_EVERY = 4` ticks i es repeteix en bucle horitzontal;
+  `draw_fons()` com a primer pintor del `render()` (de més lluny a més a
+  prop, tot als buffers i volcat únic per frame); mai col·lisiona.
+- **Nivell 4 nou** (*GALERIES D'AUTOR*): mostra petita del format nou (204
+  columnes, 5 escenes, grafiti de roca R-TYPE, fons d'estels i muntanyes);
+  el pilot automàtic la completa (`--demo 4`: COMPLETED amb 82/100 de casc).
+- **Pilot automàtic adaptat**: `_art_column_band()` (runs lliures per columna,
+  illes flotants); `_corridor_free_band()` i `_ticks_until_wall()` entenen
+  els dos formats i ignoren el fons.
+- **`eines_art.py`**: eina d'autoria (validació + previsualització amb colors).
+- **Tests**: 5 blocs nous a `_test_terreny.py` (15-19) i garanties de disseny
+  esteses als nivells dibuixats (bloc 9, spawns fora de roca per files).
 
 ### 2026-08-27
 - **Nivells en fitxers**: el mapa surt de `main.py` i viu a fitxers

@@ -148,6 +148,20 @@ complet del joc al terminal o a la CI.
   elevacions s'escalen deixant sempre un corredor mínim lliure
   (`MIN_CORRIDOR`). Els projectils, dels dos bàndols, moren contra la roca
   amb una espurna.
+- **Terreny dibuixat (art) i fons amb profunditat** — a partir del nivell 4
+  (*Galeries d'autor*), el terreny no es descriu amb elevacions sinó amb
+  **ASCII art literal**: 20 files de dibuix on cada columna del nivell és una
+  columna del dibuix, pintada cel·la a cel·la amb el seu caràcter i color.
+  La col·lisió és directa: **presència de caràcter = roca**; espai = lliure.
+  Això permet coves, túnels, illes flotants i missatges gravats a la roca
+  (el nivell 4 hi té un grafiti R-TYPE). A més, una capa de **fons**
+  decorativa (estels, muntanyes llunyanes) avança 4 cops més lent
+  (`FONS_EVERY`) i es repeteix en bucle, donant sensació de profunditat:
+  mai col·lisiona i el pilot automàtic l'ignora. En carregar el nivell es
+  valida que cada columna deixi un corredor mínim (`MIN_CORRIDOR`) i que
+  existeixi un camí lliure de banda a banda (BFS): un dibuix que segelli el
+  pas no es carrega. L'eina `eines_art.py` previsualitza i valida el dibuix
+  sense haver de jugar.
 - **Final de nivell** — en completar el mapa apareix un banner gran de
   `NIVELL COMPLETAT` centrat a la pantalla i la nau surt volant cap a la dreta
   fins desaparèixer. Després s'espera 6 segons abans de tornar al menú.
@@ -163,11 +177,12 @@ Tots els paràmetres del joc són a l'inici de [`main.py`](main.py):
 | `PLAYER_HORIZONTAL_SPEED` | 3.5 | Velocitat horitzontal de la nau, en cel·les/tick |
 | `SHOT_SPEED` | 5.0 | Velocitat dels projectils del jugador, en cel·les/tick |
 | `SHOT_COOLDOWN_TICKS` | 2 | Ticks entre dispars consecutius |
-| `MAPS` / `CURRENT_MAP` | 3 nivells | Nivells de la campanya i nivell actiu |
+| `MAPS` / `CURRENT_MAP` | 4 nivells | Nivells de la campanya i nivell actiu |
 | `GAME_TICK` | 0.08 s | Segons per frame (menys = més ràpid) |
 | `ENEMY_TYPES` | 4 tipus (amb el cap) | Sprites, vides, punts, velocitat, dany i frequencia |
 | `SHIP_MAX_HP` / `STATUS_BAR_WIDTH` | 100 / 24 | Vida inicial del casc i celes de la barra |
 | `MIN_CORRIDOR` | 6 | Celes lliures mínimes entre parets del terreny |
+| `ART_CANON_H` / `FONS_EVERY` | 20 / 4 | Alçada de disseny de l'art dibuixat i ticks per avançar una columna de fons |
 | `POWERUPS` / `POWERUP_NO_DROP_WEIGHT` | 3 mides / 30 | Kits de reparacio (cura, sprite) i pes de no-drop |
 | `BOSS_MAX_HP` / `BOSS_BAR_WIDTH` | 30 / 22 | Vida del cap final i celes de la seva barra a l'HUD |
 | `BOSS_DROP_KIND` / `BOSS_DROP_CHANCE` | 2 / 0.65 | Kit gran que deixa el cap en caure i probabilitat |
@@ -179,11 +194,13 @@ R-TypeASCII/
 ├── main.py               # El motor del joc (render, entrada, campanya, CLI)
 ├── nivell_1.py           # Nivell 1: spawns + parets (terreny)
 ├── nivell_2.py           # Nivell 2: Escull de ferro
+├── nivell_4.py           # Nivell 4: Galeries d'autor (terreny dibuixat + fons)
 ├── nivell_<n>.py         # Més nivells: es carreguen en ordre numèric
+├── eines_art.py          # Eina: valida i previsualitza l'art d'un nivell
 ├── README.md             # Documentació d'usuari (aquest fitxer)
 ├── PROJECT.md            # Documentació tècnica del projecte
 ├── PROJECT_SUMMARY.md    # Resum de disseny original (històric)
-├── _test_terreny.py      # Suite headless de proves del terreny (12 blocs)
+├── _test_terreny.py      # Suite headless de proves del terreny (19 blocs)
 ├── test_smoke.py          # Suite headless de proves del motor (106 comprovacions)
 ├── LICENSE                # Llicència MIT
 └── .github/               # CI (GitHub Actions) i plantilles d'issues
@@ -221,6 +238,45 @@ finals — vegeu la secció *Future Enhancements* de
 Format basat en [Keep a Changelog](https://keepachangelog.com/ca/1.1.0/);
 versionat amb [SemVer](https://semver.org/lang/ca/) i etiquetat a Git
 (`vX.Y.Z`, branca `main`).
+
+### [v0.5.0] — 2026-08-30
+
+#### Afegit
+- **Terreny dibuixat (format `art`)**: nou format de nivell on el terreny és
+  un **dibuix literal** — 20 files (`ART_CANON_H`) de text on cada columna del
+  dibuix és una columna del nivell; cada cel·la sòlida es pinta amb el seu
+  caràcter i color, i **la col·lisió és la presència/absència de caràcter** a
+  la cela avaluada. Això permet coves, túnels, illes flotants i missatges
+  gravats a la roca.
+- **Capa de fons amb parallax (`fons`)**: segona capa d'art, purament
+  estètica (mai col·lisiona i el pilot automàtic l'ignora), que avança una
+  columna cada `FONS_EVERY` ticks —més lent que el primer pla— i es repeteix
+  en bucle horitzontal. El render la pinta la primera (més lluny) i els
+  espais del primer pla la deixen veure: sensació de profunditat.
+- **`nivell_4.py` (*GALERIES D'AUTOR*)**: nivell de mostra petit (204
+  columnes, 284 ticks) amb cinc escenes — cel obert, cova amb estalactites i
+  cristalls, túnel metàl·lic amb llums, cel amb illes flotants i un grafiti
+  de roca R-TYPE, i sortida ampla — més un fons d'estels i muntanyes. El seu
+  docstring és la referència del format nou.
+- **Validació de jugabilitat en carregar**: cada columna del dibuix ha de
+  deixar un corredor d'almenys `MIN_CORRIDOR` cel·les i ha d'existir un camí
+  lliure de la primera a la darrera columna (BFS): un dibuix que segelli el
+  pas rebutja el nivell amb un missatge clar, en lloc d'escanyar la nau.
+- **`eines_art.py`**: eina d'autoria que valida un nivell dibuixat i el
+  previsualitza amb colors sense jugar (corredor mínim, spawns sobre roca).
+- **`_test_terreny.py`**: cinc blocs nous (15-19): normalització i errors de
+  dibuix, col·lisió de nau i projectils per cel·les, render de l'art i del
+  fons (parallax i bucle), pilot automàtic amb illes flotants i simulació
+  completa del nivell 4. Les garanties de disseny (bloc 9) cobreixen també
+  els nivells dibuixats, incloent spawns fora de roca.
+
+#### Canviat
+- Col·lisions, render i pilot passen per l'adaptador `_column_cells()` i
+  `terrain_rects()`, que admeten els DOS formats de columna (elevacions i
+  art): els nivells 1-3 (format antic) segueixen funcionant intactes.
+- L'art es dissenya a 20 files i es mostreja a l'alçada del terminal amb
+  `_art_row()` (nearest-neighbor): render i col·lisions fan servir el mateix
+  mostreig, així que el que es pinta és exactament el que col·lisiona.
 
 ### [v0.4.1] — 2026-08-29
 
