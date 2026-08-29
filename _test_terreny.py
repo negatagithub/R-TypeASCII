@@ -184,4 +184,25 @@ hud_last = main.render(st7).splitlines()[-1]
 assert "CAP" in hud_last, hud_last
 assert f"{main.BOSS_MAX_HP}/{main.BOSS_MAX_HP}" in hud_last, hud_last
 
-print("TOT BE: 13 blocs de proves superats")
+# 14. el cap no mor en el xoc: fa mal i empeny la nau cap a l'esquerra
+st8 = main.new_state()
+st8["player_x"] = 5 / main.SCREEN_WIDTH
+st8["player_y"] = 0.4
+boss2 = main.make_enemy(8 / main.SCREEN_WIDTH, main.BOSS_KIND)
+boss2["y"] = 0.4
+boss2["base_y"] = 0.4
+boss2["amp"] = 0.0
+boss2["phase"] = 0.0
+boss2["hp"] = main.BOSS_MAX_HP
+st8["enemies"].append(boss2)
+hp0 = st8["hp"]
+main.update_world(st8)
+dany0 = main.ENEMY_TYPES[main.BOSS_KIND]["damage"]
+assert st8["hp"] == hp0 - dany0, st8["hp"]          # dany del xoc al casc
+assert boss2 in st8["enemies"]                      # el cap sobreviu
+assert boss2["hp"] == main.BOSS_MAX_HP, boss2["hp"]
+push_n = main.BOSS_PUSH_COLS / main.SCREEN_WIDTH
+esperat_x = 8 / main.SCREEN_WIDTH - main.s_w_n(main.PLAYER_SPRITE) - push_n
+assert st8["player_x"] == esperat_x, (st8["player_x"], esperat_x)
+
+print("TOT BE: 14 blocs de proves superats")

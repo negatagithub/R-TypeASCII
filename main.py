@@ -1130,7 +1130,9 @@ def update_world(state: dict) -> None:
 
     # --- colisions contra la nau: dany pesat i enemic esbucat ----------------
     # Cada enemic que toca el casc li fa el dany del seu tipus i explota al
-    # seu centre; poden xocar varis el mateix tick (el dany s'acumula).
+    # seu centre; poden xocar varis el mateix tick (el dany s'acumula). El
+    # cap final n'es l'excepcio: no mor en xocar -li fa mal a la nau i
+    # l'empeny cap a l'esquerra, fora del seu casc (BOSS_PUSH_COLS).
     sr = ship_rect(state)
     survivors = []
     for enemy in state["enemies"]:
@@ -1138,9 +1140,20 @@ def update_world(state: dict) -> None:
             state["hp"] = max(0, state["hp"]
                               - ENEMY_TYPES[enemy["kind"]]["damage"])
             ex, ey, ew, eh = enemy_rect(enemy)
-            state["effects"].append(make_effect(
-                ex + ew / 2, ey + eh / 2,
-                BOOM_FRAMES if ew >= 3.0 / SCREEN_WIDTH else SPARK_FRAMES))
+            if enemy["kind"] == BOSS_KIND:
+                # El cap no explota: l'impacte deixa una espurna i la nau
+                # surt disparada cap a l'esquerra, fora del seu casc.
+                state["effects"].append(make_effect(
+                    ex + ew / 2, ey + eh / 2, SPARK_FRAMES))
+                push_n = BOSS_PUSH_COLS / SCREEN_WIDTH
+                ship_left = enemy["x"] - s_w_n(PLAYER_SPRITE) - push_n
+                state["player_x"] = max(0.0, min(ship_left,
+                                                 state["player_x"]))
+                survivors.append(enemy)
+            else:
+                state["effects"].append(make_effect(
+                    ex + ew / 2, ey + eh / 2,
+                    BOOM_FRAMES if ew >= 3.0 / SCREEN_WIDTH else SPARK_FRAMES))
         else:
             survivors.append(enemy)
     state["enemies"] = survivors

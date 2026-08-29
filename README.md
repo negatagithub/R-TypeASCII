@@ -71,7 +71,8 @@ complet del joc al terminal o a la CI.
   per la dreta, s'atura i es balanceja disparant trets dirigits. La barra
   `CAP` de la línia d'estat en mostra la vida i, en caure, el nivell es
   completa a l'instant (no cal arribar al 100% del mapa) i pot deixar un
-  kit gran de reparació.
+  kit gran de reparació. No mor si el toques: cada xoc resta 45 punts al
+  casc i **empeny la nau cap enrere, fora del seu casc** (`BOSS_PUSH_COLS`).
 - **Sprites multicolor** — cada cel·la del sprite defineix el seu caràcter i
   el seu color ANSI, de manera que una mateixa nau pot combinar cian, blanc,
   groc i altres tons. Els projectils, enemics, efectes, kits i HUD també
@@ -220,6 +221,18 @@ finals — vegeu la secció *Future Enhancements* de
 Format basat en [Keep a Changelog](https://keepachangelog.com/ca/1.1.0/);
 versionat amb [SemVer](https://semver.org/lang/ca/) i etiquetat a Git
 (`vX.Y.Z`, branca `main`).
+
+### [v0.4.1] — 2026-08-29
+
+#### Corregit
+- El **cap final ara compleix la seva promesa documentada**: no mor en xocar
+  amb la nau. Cada impacte resta 45 punts al casc i **empeny la nau cap a
+  l'esquerra, fora del seu casc** (`BOSS_PUSH_COLS`), amb una espurna en
+  lloc de la gran explosió que suggeria erròniament la seva mort. Abans el
+  boss explotava com qualsevol altre enemic i desapareixia del camp.
+- `_test_terreny.py`: 14è bloc que cobreix el xoc amb el cap (dany al casc,
+  la nau empesa exactament a `BOSS_PUSH_COLS` i el boss supervivent amb la
+  seva vida intacta).
 
 ### [v0.4.0] — 2026-08-29
 

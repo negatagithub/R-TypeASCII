@@ -69,7 +69,9 @@ la mida del terminal:
 - Cap final: `BOSS_MAX_HP = 30` vides, barra `CAP [..]` a l'HUD
   (`BOSS_BAR_WIDTH`) mentre és viu; derrotar-lo posa `completed` a cert a
   l'instant i pot deixar un kit gran (`BOSS_DROP_KIND`, probabilitat
-  `BOSS_DROP_CHANCE`). Els seus trets usen `ENEMY_SHOT_TYPES[3]`.
+  `BOSS_DROP_CHANCE`). Els seus trets usen `ENEMY_SHOT_TYPES[3]`. No mor en
+  xocar amb la nau: fa 45 de dany i la empeny cap a l'esquerra
+  (`BOSS_PUSH_COLS`) sense ser destruït.
 - Projectils del jugador a 5 cel·les/tick (`SHOT_SPEED`), cooldown de 2
   ticks; els enemics disparen projectils angulars cap a la nau.
 - Kits de reparació: petit +15, mitjà +30, gran +60 i dron aliat (fins a
