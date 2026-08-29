@@ -2,7 +2,7 @@
 import main
 
 # 1. Els nivells venen dels fitxers numerats, en ordre
-assert len(main.MAPS) == 2
+assert len(main.MAPS) == 3
 m = main.MAPS[0]
 assert m["name"] == "NIVELL 1 - PRIMER CONTACTE"
 assert len(m["spawns"]) == 59, len(m["spawns"])
@@ -12,6 +12,9 @@ assert ev_ticks == sorted(ev_ticks)
 assert main.MAPS[1]["name"] == "NIVELL 2 - ESCULL DE FERRO"
 assert len(main.MAPS[1]["spawns"]) == 84, len(main.MAPS[1]["spawns"])
 assert main.MAPS[1]["terrain_events"]
+assert main.MAPS[2]["name"] == "NIVELL 3 - EL CAP"
+assert any(s[1] == main.BOSS_KIND for s in main.MAPS[2]["spawns"])
+assert main.MAPS[2]["terrain_events"]
 
 # 2. fit_corridor garanteix el corredor minim
 t, b = main.fit_corridor(50, 50)
@@ -84,7 +87,7 @@ assert st4["map_progress"] == 1.0
 assert not st4["terrain"] or all(c["x"] < 1.0 for c in st4["terrain"])
 
 # 9. garanties de disseny de TOTS els nivells: dins de durada i passables
-assert len(main.MAPS) == 2, len(main.MAPS)
+assert len(main.MAPS) == 3, len(main.MAPS)
 assert len(main.MAPS[0]["spawns"]) == 59
 assert len(main.MAPS[1]["spawns"]) == 84
 for idx, mapa in enumerate(main.MAPS, start=1):
@@ -158,4 +161,27 @@ try:
 except SystemExit as exc:
     assert exc.code == 0
 
-print("TOT BE: 12 blocs de proves superats")
+# 13. derrotes el cap final: completa el nivell sense esperar el mapa
+st6 = main.new_state()
+st6["player_x"] = -1.0                     # fora de pantalla
+boss = main.make_enemy(5 / main.SCREEN_WIDTH, main.BOSS_KIND)
+boss["hp"] = 1                              # un toc mes i cau
+boss["y"] = 0.4
+boss["base_y"] = 0.4                        # sense derivacio: reflex exacte
+boss["amp"] = 0.0
+boss["phase"] = 0.0
+st6["enemies"].append(boss)
+st6["shots"].append({"x": 5 / main.SCREEN_WIDTH, "y": 0.4})
+main.update_world(st6)
+assert st6["completed"], f"el cap hauria de completar el nivell: {st6}"
+assert boss not in st6["enemies"]
+assert st6["score"] == main.ENEMY_TYPES[main.BOSS_KIND]["points"], st6["score"]
+
+# 13b. la barra dHP del cap apareix a lHUD mentre el cap es viu
+st7 = main.new_state()
+st7["enemies"].append(main.make_enemy(0.9, main.BOSS_KIND))
+hud_last = main.render(st7).splitlines()[-1]
+assert "CAP" in hud_last, hud_last
+assert f"{main.BOSS_MAX_HP}/{main.BOSS_MAX_HP}" in hud_last, hud_last
+
+print("TOT BE: 13 blocs de proves superats")

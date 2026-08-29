@@ -43,9 +43,9 @@ L'entrada es llegeix per **estat del teclat** a cada frame (via
 `GetAsyncKeyState`): pots mantenir les tecles premudes i combinar-ne diverses
 alhora —moviment en diagonal mentre disparres— com en un joc d'arcade.
 
-Els enemics arriben en tres mides —drons petits, caces mitjans i creuers
-cuirassats— i els projectils (`-`) els destrueixen; cada tipus val punts
-diferents i els mes grossos aguantan varios impactes. Quan un enemic toca
+Els enemics arriben en quatre mides —drons petits, caces mitjans, creuers
+cuirassats i el cap final del nivell 3— i els projectils (`-`) els destrueixen;
+cada tipus val punts diferents i els mes grossos aguantan varios impactes. Quan un enemic toca
 la nau li resta vida al casc segons la seva mida, i la partida s'acaba si
 la barra inferior queda buida. El nivell 1 segueix un mapa temporitzat i
 acaba quan s'han recorregut tots els seus ticks.
@@ -67,6 +67,11 @@ complet del joc al terminal o a la CI.
 - **Enemics de diverses mides** — drons (3x1, ràpids, 1 vida, 10 pts),
   caces (3x2, 2 vides, 30 pts) i creuers (5x3, lents, 4 vides, 80 pts).
   Cada sprite ocupa el seu rectangle: la mida forma part del repte.
+- **Cap final (nivell 3)** — el `cap` (10x4, **30 vides**, 500 pts) entra
+  per la dreta, s'atura i es balanceja disparant trets dirigits. La barra
+  `CAP` de la línia d'estat en mostra la vida i, en caure, el nivell es
+  completa a l'instant (no cal arribar al 100% del mapa) i pot deixar un
+  kit gran de reparació.
 - **Sprites multicolor** — cada cel·la del sprite defineix el seu caràcter i
   el seu color ANSI, de manera que una mateixa nau pot combinar cian, blanc,
   groc i altres tons. Els projectils, enemics, efectes, kits i HUD també
@@ -128,7 +133,8 @@ complet del joc al terminal o a la CI.
   ticks (uns 144 segons); el nivell 2 (*Escull de ferro*) té corredors més
   estrets (mínim de 8 cel·les al pic) i molta més densitat d'enemics. La
   partida acaba amb la pantalla de nivell completat quan la barra de mapa
-  arriba al 100%.
+  arriba al 100% —excepte al nivell 3 (*El cap*), on derrotar el cap final
+  es tanca el nivell a l'instant.
 - **Campanya** — en superar un nivell s'avança automàticament al següent
   (els fitxers `nivell_<n>.py` es carreguen en ordre numèric). En completar
   l'últim nivell pots reiniciar la campanya des del principi.
@@ -156,12 +162,14 @@ Tots els paràmetres del joc són a l'inici de [`main.py`](main.py):
 | `PLAYER_HORIZONTAL_SPEED` | 3.5 | Velocitat horitzontal de la nau, en cel·les/tick |
 | `SHOT_SPEED` | 5.0 | Velocitat dels projectils del jugador, en cel·les/tick |
 | `SHOT_COOLDOWN_TICKS` | 2 | Ticks entre dispars consecutius |
-| `MAPS` / `CURRENT_MAP` | 2 nivells | Nivells de la campanya i nivell actiu |
+| `MAPS` / `CURRENT_MAP` | 3 nivells | Nivells de la campanya i nivell actiu |
 | `GAME_TICK` | 0.08 s | Segons per frame (menys = més ràpid) |
-| `ENEMY_TYPES` | 3 tipus | Sprites, vides, punts, velocitat, dany i frequencia |
+| `ENEMY_TYPES` | 4 tipus (amb el cap) | Sprites, vides, punts, velocitat, dany i frequencia |
 | `SHIP_MAX_HP` / `STATUS_BAR_WIDTH` | 100 / 24 | Vida inicial del casc i celes de la barra |
 | `MIN_CORRIDOR` | 6 | Celes lliures mínimes entre parets del terreny |
 | `POWERUPS` / `POWERUP_NO_DROP_WEIGHT` | 3 mides / 30 | Kits de reparacio (cura, sprite) i pes de no-drop |
+| `BOSS_MAX_HP` / `BOSS_BAR_WIDTH` | 30 / 22 | Vida del cap final i celes de la seva barra a l'HUD |
+| `BOSS_DROP_KIND` / `BOSS_DROP_CHANCE` | 2 / 0.65 | Kit gran que deixa el cap en caure i probabilitat |
 
 ## Estructura del projecte
 
@@ -212,6 +220,34 @@ finals — vegeu la secció *Future Enhancements* de
 Format basat en [Keep a Changelog](https://keepachangelog.com/ca/1.1.0/);
 versionat amb [SemVer](https://semver.org/lang/ca/) i etiquetat a Git
 (`vX.Y.Z`, branca `main`).
+
+### [v0.4.0] — 2026-08-29
+
+#### Afegit
+- **Cap final i `nivell_3.py` (*EL CAP*)**: nou enemic de tipus `cap` (`kind`
+  3, `BOSS_KIND`) —sprite 10x4, **30 vides**, 500 pts— que entra per la dreta,
+  s'atura a `BOSS_STOP_COLS` celes de la vora i es balanceja disparant trets
+  dirigits (projectil pesat). El tercer nivell de la campanya és la seva arena:
+  corredor rocós d'aproximació, camp net i el cap al tick 800.
+- **Barra de vida del cap a l'HUD**: mentre el cap és viu, la línia d'estat
+  mostra `CAP [###...] 30/30` en magenta (`BOSS_BAR_WIDTH`).
+- **Derrotar el cap completa el nivell**: en caure, `state["completed"]` passa
+  a cert a l'instant —encara que quedin ticks de mapa— i pot deixar un kit
+  gran (`BOSS_DROP_KIND`) amb probabilitat `BOSS_DROP_CHANCE`.
+- `_test_terreny.py`: 13è bloc amb la derrota del cap (puntuació, neteja del
+  camp) i la barra d'HP a l'HUD.
+
+#### Corregit
+- **Indentació del patró `cap`**: la branca de `make_enemy`/`_move_enemy`
+  havia quedat amb cometes escapades i un sagnat trencat que impedia
+  `import main`; l'HUD amb el boss es va afegir sense la definició de
+  `render`. Tot s'ha restaurat i verificat amb les dues suites.
+- En aparèixer el cap des d'un mapa, `base_y` ja coincideix amb la fila
+  d'entrada (abans quedava el valor aleatori de `make_enemy`).
+
+#### Docs
+- README: quatre mides d'enemic (amb el cap final), mecànica de la barra i
+  de la derrota del cap, i constants `BOSS_*` a la taula.
 
 ### [v0.3.0] — 2026-08-28
 

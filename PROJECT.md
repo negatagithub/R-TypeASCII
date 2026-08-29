@@ -60,10 +60,16 @@ la mida del terminal:
   `map_progress`, `completed`, `terrain`.
 - Sprites: matrius de cel·les `(caràcter, color)` via `make_sprite`.
 - Enemics (`ENEMY_TYPES`): dron 3x1 —1 vida, 10 pts, 2 cel·les/tick—,
-  caça 3x2 —2 vides, 30 pts, 1 cel·la/tick— i creuer 5x3 —4 vides, 80 pts,
-  més lent. Danys per xoc: 10/20/35.
+  caça 3x2 —2 vides, 30 pts, 1 cel·la/tick—, creuer 5x3 —4 vides, 80 pts,
+  més lent— i el **cap** (10x4, 30 vides, 500 pts, `BOSS_KIND`), que només
+  apareix al nivell 3. Danys per xoc: 10/20/35/45.
 - Patrons de vol (`KIND_PATTERNS` + `_move_enemy`): `recta`, `ona`
-  (sinusoidal), `zigzag` (rebot), `picat` (cap al terra) i `puja`.
+  (sinusoidal), `zigzag` (rebot), `picat` (cap al terra), `puja` i `cap`
+  (entra per la dreta, s'atura a `BOSS_STOP_COLS` i oscil·la).
+- Cap final: `BOSS_MAX_HP = 30` vides, barra `CAP [..]` a l'HUD
+  (`BOSS_BAR_WIDTH`) mentre és viu; derrotar-lo posa `completed` a cert a
+  l'instant i pot deixar un kit gran (`BOSS_DROP_KIND`, probabilitat
+  `BOSS_DROP_CHANCE`). Els seus trets usen `ENEMY_SHOT_TYPES[3]`.
 - Projectils del jugador a 5 cel·les/tick (`SHOT_SPEED`), cooldown de 2
   ticks; els enemics disparen projectils angulars cap a la nau.
 - Kits de reparació: petit +15, mitjà +30, gran +60 i dron aliat (fins a

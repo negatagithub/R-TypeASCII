@@ -19,7 +19,8 @@ un joc normal: pots mantenir les tecles premudes i prémer-ne diverses en
 paral·lel mentre el joc respon a totes.
 
 La nau patrulla el costat esquerre mentre enemics de mides ben diverses
-(drons, caces i creuers cuirassats) volen cap a l'esquerra: com mes grossos,
+(drons, caces, creuers cuirassats i el cap del final de campanya) volen cap
+a l'esquerra: com mes grossos,
 mes impactes aguanten, mes punts donen i mes mal fan al casc. Els projectils
 (-) surten del morro; la barra inferior mostra la vida del casc, i la
 partida acaba quan queda completament buida.
@@ -224,6 +225,10 @@ BOSS_KIND = 3                  # index del cap a ENEMY_TYPES
 BOSS_STOP_COLS = 3.0           # celes des de la vora dreta on s'atura
 BOSS_PUSH_COLS = 2.0           # empenta al casc quan la nau el toca
 BOSS_SPREAD = 0.004            # obertura vertical del ventall de la rafega
+BOSS_MAX_HP = 30               # vida total del cap final
+BOSS_BAR_WIDTH = 22            # celes de la barra de vida del cap a l'HUD
+BOSS_DROP_KIND = 2             # kit gran que cau al derrotar el cap
+BOSS_DROP_CHANCE = 0.65        # probabilitat de drop al caure el cap
 
 # --- mapes -------------------------------------------------------------------
 # Els nivells NO viuen aqui dins: cada un es un fitxer propi numerat
@@ -558,6 +563,11 @@ def make_enemy(x: float, kind=None) -> dict:
         enemy["base_y"] = random.uniform(amp, max(amp, avail - amp))
     elif pattern == "zigzag":
         enemy["vy"] = random.choice((-1, 1))
+    elif pattern == "cap":
+        # El cap final: s'atura a la dreta i oscil.la cap al seu centre.
+        enemy["base_y"] = enemy["y"]
+        enemy["amp"] = 0.08
+        enemy["phase"] = 0.0
     return enemy
 
 
@@ -878,12 +888,11 @@ def _move_enemy(enemy: dict, tick: int) -> None:
         # Versio espeix: puja en diagonal fins dalt i alli segueix recte.
         dy = -2.0 * step_y if enemy["y"] > 0.0 else 0.0
     elif pattern == "cap":
-        # El cap avança fins a la seva posicio de combat i alli es balanceja
+        # El cap avanca fins a la seva posicio de combat i alli es balanceja
         # al voltant de la fila on ha neixut (base_y +- amp).
         stop_x = (1.0 - s_w_n(t["sprite"])
                   - BOSS_STOP_COLS / SCREEN_WIDTH)
-        dx = 0.0 if enemy["x"] <= stop_x else max(-spd_x,
-                                                  stop_x - enemy["x"])
+        dx = 0.0 if enemy["x"] <= stop_x else max(-spd_x, stop_x - enemy["x"])
         desired = (enemy.get("base_y", enemy["y"])
                    + enemy.get("amp", 0.08)
                    * math.sin(0.05 * tick + enemy.get("phase", 0.0)))
@@ -922,6 +931,13 @@ def update_world(state: dict) -> None:
                 enemy["base_y"] = enemy["y"]
             elif pattern == "zigzag":
                 enemy["vy"] = 1
+            elif pattern == "cap":
+                # El cap entra per la dreta i es balanceja al voltant de la
+                # fila on se li ha dit que neixi (mirall de la branca "ona"):
+                # sense aixo la base quedaria a l'y aleatori de make_enemy.
+                enemy["base_y"] = enemy["y"]
+                enemy["amp"] = 0.08
+                enemy["phase"] = 0.0
             state["enemies"].append(enemy)
     # --- terreny: cada columna de paret entra per la dreta el seu tick -------
     # Els esdeveniments ja venen aplanats i ordenats des del fitxer de nivell.
@@ -1085,11 +1101,21 @@ def update_world(state: dict) -> None:
                         ex + ew / 2, ey + eh / 2,
                         BOOM_FRAMES if ew >= 3.0 / SCREEN_WIDTH
                         else SPARK_FRAMES))
-                    # Recompensa: pot caure un kit de reparacio.
-                    drop = roll_powerup_drop()
-                    if drop is not None:
-                        state["powerups"].append(
-                            make_powerup(ex + ew / 2, ey + eh / 2, drop))
+                    # Recompensa i desenllac del cap final: derrotar-lo
+                    # completa l'escenari immediatament (encara que quedin
+                    # ticks de mapa) i deixa caure un kit gran amb certa
+                    # probabilitat; els altres enemics segueixen el sorteig.
+                    if enemy["kind"] == BOSS_KIND:
+                        state["completed"] = True
+                        if random.random() < BOSS_DROP_CHANCE:
+                            state["powerups"].append(
+                                make_powerup(ex + ew / 2, ey + eh / 2,
+                                             BOSS_DROP_KIND))
+                    else:
+                        drop = roll_powerup_drop()
+                        if drop is not None:
+                            state["powerups"].append(
+                                make_powerup(ex + ew / 2, ey + eh / 2, drop))
                 break                           # cada projectil pega un sol cop
     if dead_shots:
         state["shots"] = [s for i, s in enumerate(state["shots"])
@@ -1247,6 +1273,17 @@ def draw_terrain_column(column: dict) -> None:
         _plot(char, cx, y, code)
 
 
+def _active_boss(state: dict):
+    """El cap final actual (``kind == BOSS_KIND``) o ``None`` si encara no ha
+    néixit o ja ha caït. Es busca entre els enemics visuals: el boss és l'enemic
+    de ``kind == BOSS_KIND`` que encara no s'ha derrotat.
+    """
+    for enemy in state["enemies"]:
+        if enemy["kind"] == BOSS_KIND:
+            return enemy
+    return None
+
+
 def render(state: dict) -> str:
     """Compon el HUD i el camp de joc (amb colors) i ho retorna com a text."""
     global _screen, _colors
@@ -1313,6 +1350,15 @@ def render(state: dict) -> str:
     map_percent = int(map_progress * 100)
     status = (paint(f" CASC [{gauge}] {hp}/{SHIP_MAX_HP}", gauge_code)
               + paint(f"   MAPA [{map_gauge}] {map_percent:3d}%", "96"))
+    # Barra de vida del cap final (si encomana): nomes es mostra mentre el cap
+    # es viu, despres de la barra de mapa. El magenta combina amb el seu
+    # sprite multicolor.
+    boss = _active_boss(state)
+    if boss is not None:
+        boss_hp = max(0, boss["hp"])
+        b_filled = BOSS_BAR_WIDTH * boss_hp // BOSS_MAX_HP
+        b_gauge = "#" * b_filled + "-" * (BOSS_BAR_WIDTH - b_filled)
+        status += paint(f"   CAP [{b_gauge}] {boss_hp}/{BOSS_MAX_HP}", "95")
 
     return hud + "\n" + "\n".join(rows) + "\n" + status
 
