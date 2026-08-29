@@ -18,7 +18,9 @@ nau navega per l'esquerra mentre els enemics arriben volant des de la dreta.
 ## Com jugar
 
 ```
-python main.py [nivell]
+python main.py [nivell]         # partida normal
+python main.py --demo           # demo: pilot automatic (no guarda records)
+python main.py --demo 2         # demo del nivell 2
 ```
 
 | Argument | Descripció |
