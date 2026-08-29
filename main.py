@@ -240,6 +240,11 @@ BOSS_DROP_CHANCE = 0.65        # probabilitat de drop al caure el cap
 #            controla completament els naixements: no hi ha spawn aleatori
 #   terrain  parets de dalt i de baix, per elevacions (opcional; vegeu el
 #            docstring de nivell_1.py per al format complet)
+#   art      terreny DIBUIXAT: dibuix literal a dues capes, el primer pla
+#            solid (col·lisió = presència de caracter) i el fons estetic amb
+#            parallax (opcional, no pot coexistir amb 'terrain'; paletes
+#            'paleta'/'paleta_fons'; vegeu el docstring de nivell_4.py per al
+#            format complet i eines_art.py per previsualitzar-lo)
 LEVELS_DIR = os.path.dirname(os.path.abspath(__file__))
 LEVEL_FILE_PATTERN = "nivell_*.py"
 
