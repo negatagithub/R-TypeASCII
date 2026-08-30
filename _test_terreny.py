@@ -1,20 +1,22 @@
 """Proves rapides del terreny i del carregador de nivells (fitxer temporal)."""
 import main
 
-# 1. Els nivells venen dels fitxers numerats, en ordre (3 antics + 1 d'art)
+# 1. Els nivells venen dels fitxers numerats, en ordre (4 d'art)
 assert len(main.MAPS) == 4
 m = main.MAPS[0]
 assert m["name"] == "NIVELL 1 - PRIMER CONTACTE"
 assert len(m["spawns"]) == 59, len(m["spawns"])
-assert m["terrain_events"], "hauria d'haver esdeveniments de terreny"
-ev_ticks = [ev[0] for ev in m["terrain_events"]]
-assert ev_ticks == sorted(ev_ticks)
+# Els tres nivells originals (primer contacte, escull de ferro, el cap) ja
+# estan migrats a format d'art (dibuix literal) amb fons de parallax.
+assert m["art_columns"], "hauria tenir columnes d'art"
+assert m["fons_columns"], "hauria tenir columnes de fons"
+assert all(len(c) == main.ART_CANON_H for c in m["art_columns"])
 assert main.MAPS[1]["name"] == "NIVELL 2 - ESCULL DE FERRO"
 assert len(main.MAPS[1]["spawns"]) == 84, len(main.MAPS[1]["spawns"])
-assert main.MAPS[1]["terrain_events"]
+assert main.MAPS[1]["art_columns"]
 assert main.MAPS[2]["name"] == "NIVELL 3 - EL CAP"
 assert any(s[1] == main.BOSS_KIND for s in main.MAPS[2]["spawns"])
-assert main.MAPS[2]["terrain_events"]
+assert main.MAPS[2]["art_columns"]
 
 # 2. fit_corridor garanteix el corredor minim
 t, b = main.fit_corridor(50, 50)
@@ -118,6 +120,8 @@ for idx, mapa in enumerate(main.MAPS, start=1):
         # Cap enemic neix sobre roca: les files del seu sprite, lliures a la
         # columna del dibuix que entra al seu mateix tick.
         for tick, kind, start_y, _patro in mapa["spawns"]:
+            if tick >= len(cols):
+                continue          # fora de l'art: arena buida, sense roca
             column = cols[tick]
             y0 = min(main.ART_CANON_H - 1, max(
                 0, int(round(start_y * main.ART_CANON_H))))

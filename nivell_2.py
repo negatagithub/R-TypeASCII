@@ -4,210 +4,986 @@ Segon nivell de la campanya, mes dur que el primer: corredors mes estrets
 (minim de 8 celes al pic, contra les 10 del nivell 1), murs de 10 files i
 gaire be el doble de densitat d'enemics (84 esdeveniments en 1800 ticks).
 
-El format del diccionari LEVEL es el mateix que el de nivell_1.py (vegeu el
-seu docstring per als detalls). Les mateixes figures auxiliars es tornen a
-definir aqui perque cada fitxer de nivell sigui autocontingut.
+Aquest nivell va ser CONVERTIT AUTOMATICAMENT des de l'antic format
+d'elevacions a la v0.6.0: conserva exactament els mateixos perfils de roca,
+colors (cada estil de vora/cos te la seva clau a PALETA) i temps d'entrada
+de cada columna. El terreny es DIBUIXAT (format 'art'; la referencia
+completa del format es el docstring de nivell_4.py). El fons (pluja tenu,
+bigues trencades i restes de casc enfonsat) es purament estetic i avanca
+mes lent que el primer pla.
 
 Fases d'aquest nivell (dificultat creixent):
 
   1. LA PORTA        comencem amb una porta de 10 celes de corredor.
   2. L'ESTRET        murs de 8 files alternats i bumps en cadena rapida.
-  3. LA GORGA        corredor en S doble, tunell estret i porta de 8 celes.
+  3. LA GORGA        corredor en S doble, tunell estret i porta de cristall.
   4. L'ESCULL        murs de 10 files, serra triple i la pinca mes cruel.
   5. TEMPESTA FINAL  cadena de bumps cada 10 ticks i la gola final.
 """
 
+FILES = 20                    # ART_CANON_H: files de tot dibuix
 
-def bump(h):
-    """Perfil triangular d'amplada 2*h-1: 1, 2, ..., h, ..., 2, 1."""
-    return tuple(range(1, h + 1)) + tuple(range(h - 1, 0, -1))
+PALETA = {
+    "#": ("#", "91"),
+    "%": ("%", "90"),
+    "@": ("@", "95"),
+    "Q": ("#", "97"),
+    "R": ("%", "35"),
+    "W": ("%", "33"),
+    "Y": ("%", "94"),
+    "e": ("%", "95"),
+    "q": ("#", "37"),
+    "r": ("#", "95"),
+    "w": ("#", "93"),
+    "y": ("#", "96"),
+}
+
+PALETA_FONS = {
+    "'": ("'", "94"),
+    "\\": ("\\", "90"),
+    "/": ("/", "90"),
+    "_": ("_", "33"),
+}
 
 
-def trapei(h, pla):
-    """Puja fins a h, es manté `pla` columnes i torna a baixar."""
-    return tuple(range(1, h + 1)) + (h,) * pla + tuple(range(h - 1, 0, -1))
+def junta(*paneles):
+    """Enganxa panells de 20 files horitzontalment en un sol dibuix."""
+    return tuple("".join(fila) for fila in zip(*paneles))
 
 
-def fila(*blocs):
-    """Encadena blocs en una fila de columnes; cada enter introdueix zeros."""
-    columnes = []
-    for bloc in blocs:
-        if isinstance(bloc, int):
-            columnes.extend([0] * bloc)
-        else:
-            columnes.extend(bloc)
-    return tuple(columnes)
+def cel(n):
+    """Panel de cel obert: n columnes del tot lliures."""
+    return (" " * n,) * FILES
+
+
+# Roca del tick 60 al 73 (14 columnes)
+PANELL_02 = (
+    "#%%%%%%%%%%%%#",
+    " #%%%%%%%%%%# ",
+    "  #%%%%%%%%#  ",
+    "   #%%%%%%#   ",
+    "    #%%%%#    ",
+    "     ####     ",
+    "              ",
+    "              ",
+    "              ",
+    "              ",
+    "              ",
+    "              ",
+    "              ",
+    "              ",
+    "     ####     ",
+    "    #%%%%#    ",
+    "   #%%%%%%#   ",
+    "  #%%%%%%%%#  ",
+    " #%%%%%%%%%%# ",
+    "#%%%%%%%%%%%%#",
+)
+
+# Roca del tick 170 al 178 (9 columnes)
+PANELL_04 = (
+    "q%%%%%%%q",
+    " q%%%%%q ",
+    "  q%%%q  ",
+    "   q%q   ",
+    "    q    ",
+    "         ",
+    "         ",
+    "         ",
+    "         ",
+    "         ",
+    "         ",
+    "         ",
+    "         ",
+    "         ",
+    "         ",
+    "         ",
+    "         ",
+    "         ",
+    "         ",
+    "         ",
+)
+
+# Roca del tick 250 al 258 (9 columnes)
+PANELL_06 = (
+    "         ",
+    "         ",
+    "         ",
+    "         ",
+    "         ",
+    "         ",
+    "         ",
+    "         ",
+    "         ",
+    "         ",
+    "         ",
+    "         ",
+    "         ",
+    "         ",
+    "         ",
+    "    q    ",
+    "   q%q   ",
+    "  q%%%q  ",
+    " q%%%%%q ",
+    "q%%%%%%%q",
+)
+
+# Roca del tick 380 al 393 (14 columnes)
+PANELL_08 = (
+    "%%%%%%%%%%%%%%",
+    "%%%%%%%%%%%%%%",
+    "%%%%%%%%%%%%%%",
+    "%%%%%%%%%%%%%%",
+    "%%%%%%%%%%%%%%",
+    "%%%%%%%%%%%%%%",
+    "%%%%%%%%%%%%%%",
+    "##############",
+    "              ",
+    "              ",
+    "              ",
+    "              ",
+    "              ",
+    "              ",
+    "              ",
+    "              ",
+    "              ",
+    "              ",
+    "              ",
+    "              ",
+)
+
+# Roca del tick 430 al 443 (14 columnes)
+PANELL_10 = (
+    "              ",
+    "              ",
+    "              ",
+    "              ",
+    "              ",
+    "              ",
+    "              ",
+    "              ",
+    "              ",
+    "              ",
+    "              ",
+    "              ",
+    "##############",
+    "%%%%%%%%%%%%%%",
+    "%%%%%%%%%%%%%%",
+    "%%%%%%%%%%%%%%",
+    "%%%%%%%%%%%%%%",
+    "%%%%%%%%%%%%%%",
+    "%%%%%%%%%%%%%%",
+    "%%%%%%%%%%%%%%",
+)
+
+# Roca del tick 490 al 506 (17 columnes)
+PANELL_12 = (
+    "yYYYYYYYYYy      ",
+    " yYYYYYYYy       ",
+    "  yYYYYYy        ",
+    "   yYYYy         ",
+    "    yYy          ",
+    "     y           ",
+    "                 ",
+    "                 ",
+    "                 ",
+    "                 ",
+    "                 ",
+    "                 ",
+    "                 ",
+    "                 ",
+    "           y     ",
+    "          yYy    ",
+    "         yYYYy   ",
+    "        yYYYYYy  ",
+    "       yYYYYYYYy ",
+    "      yYYYYYYYYYy",
+)
+
+# Roca del tick 590 al 600 (11 columnes)
+PANELL_14 = (
+    "rRRRRRRRRRr",
+    " rRRRRRRRr ",
+    "  rRRRRRr  ",
+    "   rRRRr   ",
+    "    rRr    ",
+    "     r     ",
+    "           ",
+    "           ",
+    "           ",
+    "           ",
+    "           ",
+    "           ",
+    "           ",
+    "           ",
+    "     r     ",
+    "    rRr    ",
+    "   rRRRr   ",
+    "  rRRRRRr  ",
+    " rRRRRRRRr ",
+    "rRRRRRRRRRr",
+)
+
+# Roca del tick 660 al 666 (7 columnes)
+PANELL_16 = (
+    "yYYYYYy",
+    " yYYYy ",
+    "  yYy  ",
+    "   y   ",
+    "       ",
+    "       ",
+    "       ",
+    "       ",
+    "       ",
+    "       ",
+    "       ",
+    "       ",
+    "       ",
+    "       ",
+    "       ",
+    "       ",
+    "       ",
+    "       ",
+    "       ",
+    "       ",
+)
+
+# Roca del tick 670 al 676 (7 columnes)
+PANELL_18 = (
+    "       ",
+    "       ",
+    "       ",
+    "       ",
+    "       ",
+    "       ",
+    "       ",
+    "       ",
+    "       ",
+    "       ",
+    "       ",
+    "       ",
+    "       ",
+    "       ",
+    "       ",
+    "       ",
+    "   #   ",
+    "  #%#  ",
+    " #%%%# ",
+    "#%%%%%#",
+)
+
+# Roca del tick 680 al 686 (7 columnes)
+PANELL_20 = (
+    "yYYYYYy",
+    " yYYYy ",
+    "  yYy  ",
+    "   y   ",
+    "       ",
+    "       ",
+    "       ",
+    "       ",
+    "       ",
+    "       ",
+    "       ",
+    "       ",
+    "       ",
+    "       ",
+    "       ",
+    "       ",
+    "       ",
+    "       ",
+    "       ",
+    "       ",
+)
+
+# Roca del tick 690 al 696 (7 columnes)
+PANELL_22 = (
+    "       ",
+    "       ",
+    "       ",
+    "       ",
+    "       ",
+    "       ",
+    "       ",
+    "       ",
+    "       ",
+    "       ",
+    "       ",
+    "       ",
+    "       ",
+    "       ",
+    "       ",
+    "       ",
+    "   #   ",
+    "  #%#  ",
+    " #%%%# ",
+    "#%%%%%#",
+)
+
+# Roca del tick 700 al 706 (7 columnes)
+PANELL_24 = (
+    "yYYYYYy",
+    " yYYYy ",
+    "  yYy  ",
+    "   y   ",
+    "       ",
+    "       ",
+    "       ",
+    "       ",
+    "       ",
+    "       ",
+    "       ",
+    "       ",
+    "       ",
+    "       ",
+    "       ",
+    "       ",
+    "       ",
+    "       ",
+    "       ",
+    "       ",
+)
+
+# Roca del tick 743 al 763 (21 columnes)
+PANELL_26 = (
+    "yYYYYYYYYYYYy        ",
+    " yYYYYYYYYYy         ",
+    "  yYYYYYYYy          ",
+    "   yYYYYYy           ",
+    "    yYYYy            ",
+    "     yyy             ",
+    "                     ",
+    "                     ",
+    "                     ",
+    "                     ",
+    "                     ",
+    "                     ",
+    "                     ",
+    "                     ",
+    "             yyy     ",
+    "            yYYYy    ",
+    "           yYYYYYy   ",
+    "          yYYYYYYYy  ",
+    "         yYYYYYYYYYy ",
+    "        yYYYYYYYYYYYy",
+)
+
+# Roca del tick 880 al 891 (12 columnes)
+PANELL_28 = (
+    "%%%%%%%%%%%%",
+    "%%%%%%%%%%%%",
+    "%%%%%%%%%%%%",
+    "%%%%%%%%%%%%",
+    "%%%%%%%%%%%%",
+    "QQQQQQQQQQQQ",
+    "            ",
+    "            ",
+    "            ",
+    "            ",
+    "            ",
+    "            ",
+    "            ",
+    "            ",
+    "QQQQQQQQQQQQ",
+    "%%%%%%%%%%%%",
+    "%%%%%%%%%%%%",
+    "%%%%%%%%%%%%",
+    "%%%%%%%%%%%%",
+    "%%%%%%%%%%%%",
+)
+
+# Roca del tick 1000 al 1016 (17 columnes)
+PANELL_30 = (
+    "#%%%%%%%e%%%%%%%#",
+    " #%%%%%%e%%%%%%# ",
+    "  #%%%%%e%%%%%#  ",
+    "   #%%%%e%%%%#   ",
+    "    #%%%e%%%#    ",
+    "     #%%e%%#     ",
+    "      ##@##      ",
+    "                 ",
+    "                 ",
+    "                 ",
+    "                 ",
+    "                 ",
+    "                 ",
+    "      ##@##      ",
+    "     #%%e%%#     ",
+    "    #%%%e%%%#    ",
+    "   #%%%%e%%%%#   ",
+    "  #%%%%%e%%%%%#  ",
+    " #%%%%%%e%%%%%%# ",
+    "#%%%%%%%e%%%%%%%#",
+)
+
+# Roca del tick 1120 al 1129 (10 columnes)
+PANELL_32 = (
+    "%%%%%%%%%%",
+    "%%%%%%%%%%",
+    "%%%%%%%%%%",
+    "%%%%%%%%%%",
+    "%%%%%%%%%%",
+    "%%%%%%%%%%",
+    "%%%%%%%%%%",
+    "%%%%%%%%%%",
+    "%%%%%%%%%%",
+    "##########",
+    "          ",
+    "          ",
+    "          ",
+    "          ",
+    "          ",
+    "          ",
+    "          ",
+    "          ",
+    "          ",
+    "          ",
+)
+
+# Roca del tick 1180 al 1189 (10 columnes)
+PANELL_34 = (
+    "          ",
+    "          ",
+    "          ",
+    "          ",
+    "          ",
+    "          ",
+    "          ",
+    "          ",
+    "          ",
+    "          ",
+    "##########",
+    "%%%%%%%%%%",
+    "%%%%%%%%%%",
+    "%%%%%%%%%%",
+    "%%%%%%%%%%",
+    "%%%%%%%%%%",
+    "%%%%%%%%%%",
+    "%%%%%%%%%%",
+    "%%%%%%%%%%",
+    "%%%%%%%%%%",
+)
+
+# Roca del tick 1250 al 1258 (9 columnes)
+PANELL_36 = (
+    "rRRRRRRRr",
+    " rRRRRRr ",
+    "  rRRRr  ",
+    "   rRr   ",
+    "    r    ",
+    "         ",
+    "         ",
+    "         ",
+    "         ",
+    "         ",
+    "         ",
+    "         ",
+    "         ",
+    "         ",
+    "         ",
+    "         ",
+    "         ",
+    "         ",
+    "         ",
+    "         ",
+)
+
+# Roca del tick 1262 al 1270 (9 columnes)
+PANELL_38 = (
+    "         ",
+    "         ",
+    "         ",
+    "         ",
+    "         ",
+    "         ",
+    "         ",
+    "         ",
+    "         ",
+    "         ",
+    "         ",
+    "         ",
+    "         ",
+    "         ",
+    "         ",
+    "    r    ",
+    "   rRr   ",
+    "  rRRRr  ",
+    " rRRRRRr ",
+    "rRRRRRRRr",
+)
+
+# Roca del tick 1274 al 1282 (9 columnes)
+PANELL_40 = (
+    "rRRRRRRRr",
+    " rRRRRRr ",
+    "  rRRRr  ",
+    "   rRr   ",
+    "    r    ",
+    "         ",
+    "         ",
+    "         ",
+    "         ",
+    "         ",
+    "         ",
+    "         ",
+    "         ",
+    "         ",
+    "         ",
+    "         ",
+    "         ",
+    "         ",
+    "         ",
+    "         ",
+)
+
+# Roca del tick 1330 al 1346 (17 columnes)
+PANELL_42 = (
+    "rRRRRRRRRRRRRRRRr",
+    " rRRRRRRRRRRRRRr ",
+    "  rRRRRRRRRRRRr  ",
+    "   rRRRRRRRRRr   ",
+    "    rRRRRRRRr    ",
+    "     rRRRRRr     ",
+    "      rrrrr      ",
+    "                 ",
+    "                 ",
+    "                 ",
+    "                 ",
+    "                 ",
+    "                 ",
+    "      rrrrr      ",
+    "     rRRRRRr     ",
+    "    rRRRRRRRr    ",
+    "   rRRRRRRRRRr   ",
+    "  rRRRRRRRRRRRr  ",
+    " rRRRRRRRRRRRRRr ",
+    "rRRRRRRRRRRRRRRRr",
+)
+
+# Roca del tick 1420 al 1428 (9 columnes)
+PANELL_44 = (
+    "rRRRRRRRr",
+    " rRRRRRr ",
+    "  rRRRr  ",
+    "   rRr   ",
+    "    r    ",
+    "         ",
+    "         ",
+    "         ",
+    "         ",
+    "         ",
+    "         ",
+    "         ",
+    "         ",
+    "         ",
+    "         ",
+    "         ",
+    "         ",
+    "         ",
+    "         ",
+    "         ",
+)
+
+# Roca del tick 1430 al 1443 (14 columnes)
+PANELL_46 = (
+    "     rRRRRRRRr",
+    "      rRRRRRr ",
+    "       rRRRr  ",
+    "        rRr   ",
+    "         r    ",
+    "              ",
+    "              ",
+    "              ",
+    "              ",
+    "              ",
+    "              ",
+    "              ",
+    "              ",
+    "              ",
+    "              ",
+    "    r         ",
+    "   rRr        ",
+    "  rRRRr       ",
+    " rRRRRRr      ",
+    "rRRRRRRRr     ",
+)
+
+# Roca del tick 1520 al 1528 (9 columnes)
+PANELL_48 = (
+    "wWWWWWWWw",
+    " wWWWWWw ",
+    "  wWWWw  ",
+    "   wWw   ",
+    "    w    ",
+    "         ",
+    "         ",
+    "         ",
+    "         ",
+    "         ",
+    "         ",
+    "         ",
+    "         ",
+    "         ",
+    "         ",
+    "         ",
+    "         ",
+    "         ",
+    "         ",
+    "         ",
+)
+
+# Roca del tick 1530 al 1538 (9 columnes)
+PANELL_50 = (
+    "         ",
+    "         ",
+    "         ",
+    "         ",
+    "         ",
+    "         ",
+    "         ",
+    "         ",
+    "         ",
+    "         ",
+    "         ",
+    "         ",
+    "         ",
+    "         ",
+    "         ",
+    "    w    ",
+    "   wWw   ",
+    "  wWWWw  ",
+    " wWWWWWw ",
+    "wWWWWWWWw",
+)
+
+# Roca del tick 1540 al 1548 (9 columnes)
+PANELL_52 = (
+    "wWWWWWWWw",
+    " wWWWWWw ",
+    "  wWWWw  ",
+    "   wWw   ",
+    "    w    ",
+    "         ",
+    "         ",
+    "         ",
+    "         ",
+    "         ",
+    "         ",
+    "         ",
+    "         ",
+    "         ",
+    "         ",
+    "         ",
+    "         ",
+    "         ",
+    "         ",
+    "         ",
+)
+
+# Roca del tick 1550 al 1558 (9 columnes)
+PANELL_54 = (
+    "         ",
+    "         ",
+    "         ",
+    "         ",
+    "         ",
+    "         ",
+    "         ",
+    "         ",
+    "         ",
+    "         ",
+    "         ",
+    "         ",
+    "         ",
+    "         ",
+    "         ",
+    "    w    ",
+    "   wWw   ",
+    "  wWWWw  ",
+    " wWWWWWw ",
+    "wWWWWWWWw",
+)
+
+# Roca del tick 1560 al 1568 (9 columnes)
+PANELL_56 = (
+    "wWWWWWWWw",
+    " wWWWWWw ",
+    "  wWWWw  ",
+    "   wWw   ",
+    "    w    ",
+    "         ",
+    "         ",
+    "         ",
+    "         ",
+    "         ",
+    "         ",
+    "         ",
+    "         ",
+    "         ",
+    "         ",
+    "         ",
+    "         ",
+    "         ",
+    "         ",
+    "         ",
+)
+
+# Roca del tick 1570 al 1578 (9 columnes)
+PANELL_58 = (
+    "         ",
+    "         ",
+    "         ",
+    "         ",
+    "         ",
+    "         ",
+    "         ",
+    "         ",
+    "         ",
+    "         ",
+    "         ",
+    "         ",
+    "         ",
+    "         ",
+    "         ",
+    "    w    ",
+    "   wWw   ",
+    "  wWWWw  ",
+    " wWWWWWw ",
+    "wWWWWWWWw",
+)
+
+# Roca del tick 1640 al 1658 (19 columnes)
+PANELL_60 = (
+    "#%%%%%%%%e%%%%%%%%#",
+    " #%%%%%%%e%%%%%%%# ",
+    "  #%%%%%%e%%%%%%#  ",
+    "   #%%%%%e%%%%%#   ",
+    "    #%%%%e%%%%#    ",
+    "     #%%%e%%%#     ",
+    "      ###@###      ",
+    "                   ",
+    "                   ",
+    "                   ",
+    "                   ",
+    "                   ",
+    "                   ",
+    "      ###@###      ",
+    "     #%%%e%%%#     ",
+    "    #%%%%e%%%%#    ",
+    "   #%%%%%e%%%%%#   ",
+    "  #%%%%%%e%%%%%%#  ",
+    " #%%%%%%%e%%%%%%%# ",
+    "#%%%%%%%%e%%%%%%%%#",
+)
+
+# Roca del tick 1740 al 1746 (7 columnes)
+PANELL_62 = (
+    "wWWWWWw",
+    " wWWWw ",
+    "  wWw  ",
+    "   w   ",
+    "       ",
+    "       ",
+    "       ",
+    "       ",
+    "       ",
+    "       ",
+    "       ",
+    "       ",
+    "       ",
+    "       ",
+    "       ",
+    "       ",
+    "   w   ",
+    "  wWw  ",
+    " wWWWw ",
+    "wWWWWWw",
+)
+
+# Fons: pluja i restes de ferro (es repeteix en bucle, 128 columnes)
+FONS = (
+    "'            '            '            '            '            '            '            '            '            '          ",
+    "  '            '            '            '            '            '            '            '            '            '        ",
+    "    \\\\           '     //     '           \\\\            '    //      '          \\\\'            '   //       '         \\\\ '      ",
+    "      \\\\           '     //     '           \\\\            '    //      '          \\\\'            '   //       '         \\\\ '    ",
+    "        \\\\           '     //     '           \\\\            '    //      '          \\\\'            '   //       '         \\\\ '  ",
+    "          \\\\           '     //     '           \\\\            '    //      '          \\\\'            '   //       '         \\\\ '",
+    "            \\            '     //     '           \\\\            '    //      '          \\\\'            '   //       '         \\\\",
+    " '            '            '     //     '           \\\\            '            '          \\\\'            '   //       '         ",
+    "   '            '            '     //     '            '            '            '          \\\\'            '   /        '       ",
+    "     '            '            '            '            '            '            '          \\ '            '            '     ",
+    "       '            '            '            '            '            '            '            '            '            '   ",
+    "_  _  _  '  _  _  _  _' _  _  _  _ '_  _  _  _  '  _  _  _  _' _  _  _  _ '_  _  _  _  '  _  _  _  _' _  _  _  _ '_  _  _  _  ' ",
+    " _  _  _  _' _  _  _  _ '_  _  _  _  '  _  _  _  _' _  _  _  _ '_  _  _  _  '  _  _  _  _' _  _  _  _ '_  _  _  _  '  _  _  _  _",
+    "' _  _  _  _ '_  _  _  _  '  _  _  _  _' _  _  _  _ '_  _  _  _  '  _  _  _  _' _  _  _  _ '_  _  _  _  '  _  _  _  _' _  _  _  ",
+    "  '            '            '            '            '            '            '            '            '            '        ",
+    "    '            '            '            '            '            '            '            '            '            '      ",
+    "      '            '            '            '            '            '            '            '            '            '    ",
+    "        '            '            '            '            '            '            '            '            '            '  ",
+    "          '            '            '            '            '            '            '            '            '            '",
+    "            '            '            '            '            '            '            '            '            '           ",
+)
 
 
 LEVEL = {
-    "name": "NIVELL 2 - ESCULL DE FERRO",
-    "duration": 1800,            # 144 segons a 12.5 FPS
+    "name": 'NIVELL 2 - ESCULL DE FERRO',
+    "duration": 1800,
+    "paleta": PALETA,
+    "art": junta(
+        cel(60),
+        PANELL_02,
+        cel(96),
+        PANELL_04,
+        cel(71),
+        PANELL_06,
+        cel(121),
+        PANELL_08,
+        cel(36),
+        PANELL_10,
+        cel(46),
+        PANELL_12,
+        cel(83),
+        PANELL_14,
+        cel(59),
+        PANELL_16,
+        cel(3),
+        PANELL_18,
+        cel(3),
+        PANELL_20,
+        cel(3),
+        PANELL_22,
+        cel(3),
+        PANELL_24,
+        cel(36),
+        PANELL_26,
+        cel(116),
+        PANELL_28,
+        cel(108),
+        PANELL_30,
+        cel(103),
+        PANELL_32,
+        cel(50),
+        PANELL_34,
+        cel(60),
+        PANELL_36,
+        cel(3),
+        PANELL_38,
+        cel(3),
+        PANELL_40,
+        cel(47),
+        PANELL_42,
+        cel(73),
+        PANELL_44,
+        cel(1),
+        PANELL_46,
+        cel(76),
+        PANELL_48,
+        cel(1),
+        PANELL_50,
+        cel(1),
+        PANELL_52,
+        cel(1),
+        PANELL_54,
+        cel(1),
+        PANELL_56,
+        cel(1),
+        PANELL_58,
+        cel(61),
+        PANELL_60,
+        cel(81),
+        PANELL_62,
+    ),
+    "paleta_fons": PALETA_FONS,
+    "fons": FONS,
     "spawns": (
-        # --- FASE 1 · LA PORTA: marxa alta desde el primer minut (0-350) ---
-        (5, 1, 0.30, "zigzag"),
-        (25, 0, 0.70, "ona"),
+        # --- FASE 1 - LA PORTA (des del tick 0) ---
+        (5, 1, 0.3, "zigzag"),
+        (25, 0, 0.7, "ona"),
         (85, 0, 0.25, "picat"),
         (110, 1, 0.55, "recta"),
-        (110, 0, 0.30, "recta"),
-        (140, 2, 0.50, "ona"),
-        (185, 0, 0.60, "zigzag"),
-        (215, 1, 0.40, "picat"),
+        (110, 0, 0.3, "recta"),
+        (140, 2, 0.5, "ona"),
+        (185, 0, 0.6, "zigzag"),
+        (215, 1, 0.4, "picat"),
         (265, 0, 0.35, "recta"),
         (265, 1, 0.65, "recta"),
-        (300, 2, 0.20, "ona"),
+        (300, 2, 0.2, "ona"),
         (330, 0, 0.75, "ona"),
-        # --- FASE 2 · L'ESTRET: murs profunds i cadena rapida (350-720) ----
-        (360, 0, 0.20, "recta"),
-        (360, 1, 0.70, "zigzag"),
+        # --- FASE 2 - L'ESTRET (des del tick 350) ---
+        (360, 0, 0.2, "recta"),
+        (360, 1, 0.7, "zigzag"),
         (400, 0, 0.85, "recta"),
         (415, 0, 0.15, "ona"),
-        (447, 2, 0.30, "recta"),
+        (447, 2, 0.3, "recta"),
         (470, 1, 0.35, "picat"),
-        (470, 0, 0.20, "ona"),
-        (510, 2, 0.50, "ona"),
-        (530, 0, 0.30, "recta"),
-        (530, 1, 0.70, "recta"),
-        (555, 0, 0.50, "zigzag"),
+        (470, 0, 0.2, "ona"),
+        (510, 2, 0.5, "ona"),
+        (530, 0, 0.3, "recta"),
+        (530, 1, 0.7, "recta"),
+        (555, 0, 0.5, "zigzag"),
         (615, 1, 0.25, "ona"),
         (615, 0, 0.75, "ona"),
-        (640, 2, 0.50, "recta"),
-        (668, 0, 0.50, "recta"),
-        (678, 1, 0.50, "recta"),
-        (688, 0, 0.50, "picat"),
-        (698, 1, 0.50, "recta"),
-        # --- FASE 3 · LA GORGA: S doble i tunels (720-1100) -----------------
+        (640, 2, 0.5, "recta"),
+        (668, 0, 0.5, "recta"),
+        (678, 1, 0.5, "recta"),
+        (688, 0, 0.5, "picat"),
+        (698, 1, 0.5, "recta"),
+        # --- FASE 3 - LA GORGA (des del tick 720) ---
         (720, 2, 0.35, "recta"),
         (720, 2, 0.65, "recta"),
-        (733, 0, 0.50, "ona"),
-        (770, 0, 0.30, "picat"),
-        (790, 1, 0.60, "zigzag"),
-        (810, 0, 0.40, "recta"),
-        (810, 1, 0.60, "recta"),
+        (733, 0, 0.5, "ona"),
+        (770, 0, 0.3, "picat"),
+        (790, 1, 0.6, "zigzag"),
+        (810, 0, 0.4, "recta"),
+        (810, 1, 0.6, "recta"),
         (835, 2, 0.25, "ona"),
         (835, 1, 0.75, "ona"),
         (855, 0, 0.35, "picat"),
-        (900, 2, 0.50, "zigzag"),
-        (920, 0, 0.30, "recta"),
-        (920, 1, 0.70, "recta"),
-        (945, 0, 0.50, "ona"),
-        (965, 1, 0.40, "picat"),
-        (965, 0, 0.60, "picat"),
-        (985, 2, 0.50, "ona"),
-        # --- FASE 4 · L'ESCULL: roca profunda per totes bandes (1100-1500) --
-        (1100, 0, 0.30, "zigzag"),
-        (1100, 1, 0.70, "zigzag"),
-        (1130, 2, 0.50, "recta"),
+        (900, 2, 0.5, "zigzag"),
+        (920, 0, 0.3, "recta"),
+        (920, 1, 0.7, "recta"),
+        (945, 0, 0.5, "ona"),
+        (965, 1, 0.4, "picat"),
+        (965, 0, 0.6, "picat"),
+        (985, 2, 0.5, "ona"),
+        # --- FASE 4 - L'ESCULL (des del tick 1100) ---
+        (1100, 0, 0.3, "zigzag"),
+        (1100, 1, 0.7, "zigzag"),
+        (1130, 2, 0.5, "recta"),
         (1155, 0, 0.85, "ona"),
         (1195, 0, 0.15, "ona"),
-        (1215, 1, 0.50, "recta"),
-        (1240, 0, 0.40, "picat"),
-        (1271, 1, 0.50, "recta"),
-        (1288, 0, 0.50, "ona"),
-        (1300, 2, 0.30, "recta"),
-        (1300, 1, 0.70, "recta"),
-        (1355, 0, 0.50, "recta"),
-        (1355, 1, 0.50, "ona"),
-        (1385, 2, 0.50, "zigzag"),
+        (1215, 1, 0.5, "recta"),
+        (1240, 0, 0.4, "picat"),
+        (1271, 1, 0.5, "recta"),
+        (1288, 0, 0.5, "ona"),
+        (1300, 2, 0.3, "recta"),
+        (1300, 1, 0.7, "recta"),
+        (1355, 0, 0.5, "recta"),
+        (1355, 1, 0.5, "ona"),
+        (1385, 2, 0.5, "zigzag"),
         (1410, 0, 0.35, "recta"),
         (1410, 1, 0.65, "recta"),
         (1448, 0, 0.25, "ona"),
         (1448, 1, 0.75, "ona"),
-        (1470, 2, 0.50, "picat"),
+        (1470, 2, 0.5, "picat"),
         (1470, 0, 0.35, "recta"),
-        # --- FASE 5 · TEMPESTA FINAL (1500-1800) -----------------------------
-        (1510, 0, 0.30, "ona"),
-        (1510, 1, 0.70, "ona"),
-        (1529, 0, 0.50, "recta"),
-        (1539, 1, 0.50, "recta"),
-        (1549, 2, 0.50, "recta"),
+        # --- FASE 5 - TEMPESTA FINAL (des del tick 1500) ---
+        (1510, 0, 0.3, "ona"),
+        (1510, 1, 0.7, "ona"),
+        (1529, 0, 0.5, "recta"),
+        (1539, 1, 0.5, "recta"),
+        (1549, 2, 0.5, "recta"),
         (1595, 0, 0.35, "picat"),
         (1615, 1, 0.65, "picat"),
-        (1630, 2, 0.50, "ona"),
-        (1665, 0, 0.50, "recta"),
-        (1665, 1, 0.50, "ona"),
+        (1630, 2, 0.5, "ona"),
+        (1665, 0, 0.5, "recta"),
+        (1665, 1, 0.5, "ona"),
         (1695, 2, 0.35, "ona"),
         (1695, 0, 0.65, "ona"),
-        (1730, 0, 0.30, "recta"),
-        (1730, 1, 0.70, "recta"),
-        (1755, 2, 0.50, "ona"),
-        (1785, 0, 0.40, "recta"),
-        (1785, 1, 0.60, "recta"),
-    ),
-    "terrain": (
-        # --- FASE 1 · LA PORTA: estreta desde el primer minut -----------------
-        {"tick": 60, "dalt": trapei(6, 3), "abaix": trapei(6, 3),
-         "vora": ("#", "91"), "cos": ("%", "90")},            # porta inicial
-        {"tick": 170, "dalt": bump(5), "abaix": (),
-         "vora": ("#", "37"), "cos": ("%", "90")},            # serra al cel
-        {"tick": 250, "dalt": (), "abaix": bump(5),
-         "vora": ("#", "37"), "cos": ("%", "90")},            # serra al terra
-        # --- FASE 2 · L'ESTRET: murs de 8 files i cadena rapida ---------------
-        {"tick": 380, "dalt": (8,) * 14, "abaix": (),
-         "vora": ("#", "91"), "cos": ("%", "90")},            # mur I: a terra
-        {"tick": 430, "dalt": (), "abaix": (8,) * 14,
-         "vora": ("#", "91"), "cos": ("%", "90")},            # mur II: al cel
-        {"tick": 490, "dalt": bump(6), "abaix": fila(6, bump(6)),
-         "vora": ("#", "96"), "cos": ("%", "94")},            # doble gran
-        {"tick": 590, "dalt": bump(6), "abaix": bump(6),
-         "vora": ("#", "95"), "cos": ("%", "35")},            # pinca
-        {"tick": 660, "dalt": bump(4), "abaix": (),
-         "vora": ("#", "96"), "cos": ("%", "94")},            # cadena rapida
-        {"tick": 670, "dalt": (), "abaix": bump(4),
-         "vora": ("#", "91"), "cos": ("%", "90")},
-        {"tick": 680, "dalt": bump(4), "abaix": (),
-         "vora": ("#", "96"), "cos": ("%", "94")},
-        {"tick": 690, "dalt": (), "abaix": bump(4),
-         "vora": ("#", "91"), "cos": ("%", "90")},
-        {"tick": 700, "dalt": bump(4), "abaix": (),
-         "vora": ("#", "96"), "cos": ("%", "94")},
-        # --- FASE 3 · LA GORGA: S doble, tunell i porta de cristall ------------
-        {"tick": 740,
-         "dalt": fila(3, trapei(6, 2), 8),
-         "abaix": fila(11, trapei(6, 2)),
-         "vora": ("#", "96"), "cos": ("%", "94")},            # corredor en S doble
-        {"tick": 880, "dalt": (6,) * 12, "abaix": (6,) * 12,
-         "vora": ("#", "97"), "cos": ("%", "90")},            # tunell estret
-        {"tick": 1000, "dalt": trapei(7, 4), "abaix": trapei(7, 4),
-         "vora": ("#", "91"), "cos": ("%", "90"),
-         "estils": (None,) * 8
-                   + ({"vora": ("@", "95"), "cos": ("%", "95")},)
-                   + (None,) * 8},                            # porta de cristall
-        # --- FASE 4 · L'ESCULL: roca profunda per totes bandes -----------------
-        {"tick": 1120, "dalt": (10,) * 10, "abaix": (),
-         "vora": ("#", "91"), "cos": ("%", "90")},            # mur alt I
-        {"tick": 1180, "dalt": (), "abaix": (10,) * 10,
-         "vora": ("#", "91"), "cos": ("%", "90")},            # mur profund II
-        {"tick": 1250, "dalt": bump(5), "abaix": (),
-         "vora": ("#", "95"), "cos": ("%", "35")},            # serra triple
-        {"tick": 1262, "dalt": (), "abaix": bump(5),
-         "vora": ("#", "95"), "cos": ("%", "35")},
-        {"tick": 1274, "dalt": bump(5), "abaix": (),
-         "vora": ("#", "95"), "cos": ("%", "35")},
-        {"tick": 1330, "dalt": trapei(7, 4), "abaix": trapei(7, 4),
-         "vora": ("#", "95"), "cos": ("%", "35")},            # pinca maxima
-        {"tick": 1420,
-         "dalt": fila(bump(5), 6, bump(5)),
-         "abaix": fila(10, bump(5), 5),
-         "vora": ("#", "95"), "cos": ("%", "35")},            # serra doble gran
-        # --- FASE 5 · TEMPESTA FINAL -------------------------------------------
-        {"tick": 1520, "dalt": bump(5), "abaix": (),
-         "vora": ("#", "93"), "cos": ("%", "33")},            # cadena densa
-        {"tick": 1530, "dalt": (), "abaix": bump(5),
-         "vora": ("#", "93"), "cos": ("%", "33")},
-        {"tick": 1540, "dalt": bump(5), "abaix": (),
-         "vora": ("#", "93"), "cos": ("%", "33")},
-        {"tick": 1550, "dalt": (), "abaix": bump(5),
-         "vora": ("#", "93"), "cos": ("%", "33")},
-        {"tick": 1560, "dalt": bump(5), "abaix": (),
-         "vora": ("#", "93"), "cos": ("%", "33")},
-        {"tick": 1570, "dalt": (), "abaix": bump(5),
-         "vora": ("#", "93"), "cos": ("%", "33")},
-        {"tick": 1640, "dalt": trapei(7, 6), "abaix": trapei(7, 6),
-         "vora": ("#", "91"), "cos": ("%", "90"),
-         "estils": (None,) * 9
-                   + ({"vora": ("@", "95"), "cos": ("%", "95")},)
-                   + (None,) * 9},                            # gola final
-        {"tick": 1740, "dalt": bump(4), "abaix": bump(4),
-         "vora": ("#", "93"), "cos": ("%", "33")},            # ultim ressalt
+        (1730, 0, 0.3, "recta"),
+        (1730, 1, 0.7, "recta"),
+        (1755, 2, 0.5, "ona"),
+        (1785, 0, 0.4, "recta"),
+        (1785, 1, 0.6, "recta"),
     ),
 }

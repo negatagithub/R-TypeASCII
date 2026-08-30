@@ -1833,6 +1833,8 @@ def _corridor_free_band(state: dict):
         art = "cells" in column
         if not art and column["top"] == 0 and column["bot"] == 0:
             continue                       # columna sense parets
+        if art and all(cell is None for cell in column["cells"]):
+            continue                       # columna d'art del tot lliure: cel
         if column["x"] + x_w <= sr[0] - DEMO_WALL_BEHIND * x_w:
             continue                       # completament enrrera
         if column["x"] > nose + DEMO_WALL_AHEAD * x_w:
