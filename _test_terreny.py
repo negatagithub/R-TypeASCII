@@ -1,8 +1,8 @@
 """Proves rapides del terreny i del carregador de nivells (fitxer temporal)."""
 import main
 
-# 1. Els nivells venen dels fitxers numerats, en ordre (4 d'art)
-assert len(main.MAPS) == 4
+# 1. Els nivells venen dels fitxers numerats, en ordre (5 d'art)
+assert len(main.MAPS) == 5
 m = main.MAPS[0]
 assert m["name"] == "NIVELL 1 - PRIMER CONTACTE"
 assert len(m["spawns"]) == 59, len(m["spawns"])
@@ -17,6 +17,10 @@ assert main.MAPS[1]["art_columns"]
 assert main.MAPS[2]["name"] == "NIVELL 3 - EL CAP"
 assert any(s[1] == main.BOSS_KIND for s in main.MAPS[2]["spawns"])
 assert main.MAPS[2]["art_columns"]
+assert main.MAPS[3]["name"] == "NIVELL 4 - GALERIES D'AUTOR"
+assert main.MAPS[4]["name"] == "NIVELL 5 - BASTIO URBA"
+assert any(s[1] == main.BOSS_KIND for s in main.MAPS[4]["spawns"])
+assert main.MAPS[4]["art_columns"] and main.MAPS[4]["fons_columns"]
 
 # 2. fit_corridor garanteix el corredor minim
 t, b = main.fit_corridor(50, 50)
@@ -89,7 +93,7 @@ assert st4["map_progress"] == 1.0
 assert not st4["terrain"] or all(c["x"] < 1.0 for c in st4["terrain"])
 
 # 9. garanties de disseny de TOTS els nivells: dins de durada i passables
-assert len(main.MAPS) == 4, len(main.MAPS)
+assert len(main.MAPS) == 5, len(main.MAPS)
 assert len(main.MAPS[0]["spawns"]) == 59
 assert len(main.MAPS[1]["spawns"]) == 84
 for idx, mapa in enumerate(main.MAPS, start=1):
@@ -389,4 +393,39 @@ assert st20["completed"] and st20["map_progress"] == 1.0
 assert not st20["terrain"], "el dibuix sencer hauria d'haver creuat"
 main.CURRENT_MAP = 0
 
-print("TOT BE: 19 blocs de proves superats")
+# 21. nivel 5: el cap final neix a l'arena oberta i abatre'l completa el
+# nivell de seguida (sense esperar els ticks que quedin de mapa), com el 3.
+main.CURRENT_MAP = 4
+m5 = main.MAPS[4]
+boss_spawn = next(s for s in m5["spawns"] if s[1] == main.BOSS_KIND)
+assert m5["art_columns"][boss_spawn[0]][9] is None, "el cap neix en cel net"
+assert min(sum(1 for c in col if c is None)
+           for col in m5["art_columns"]) >= main.MIN_CORRIDOR
+
+st21 = main.new_state()
+st21["player_x"] = -1.0                      # fora de pantalla: sense colisions
+boss = main.make_enemy(5 / main.SCREEN_WIDTH, main.BOSS_KIND)
+boss["hp"] = 1                               # un toc mes i cau
+boss["y"] = 0.4
+boss["base_y"] = 0.4
+boss["amp"] = 0.0
+boss["phase"] = 0.0
+st21["enemies"].append(boss)
+st21["shots"].append({"x": 5 / main.SCREEN_WIDTH, "y": 0.4})
+main.update_world(st21)
+assert st21["completed"], "el cap del nivell 5 hauria de completar-lo"
+assert boss not in st21["enemies"]
+
+# 22. simulacio completa del nivell 5: el dibuix sencer creua el camp
+st22 = main.new_state()
+st22["player_x"] = -1.0
+for i in range(m5["duration"]):
+    main.update_world(st22)
+    if i == 505:
+        # la columna que entra just quan neix el cap es cel net (arena)
+        assert all(c is None for c in m5["art_columns"][boss_spawn[0]])
+assert st22["completed"] and st22["map_progress"] == 1.0
+assert not st22["terrain"], "el dibuix sencer hauria d'haver creuat"
+main.CURRENT_MAP = 0
+
+print("TOT BE: tots els blocs de proves superats")

@@ -149,7 +149,8 @@ complet del joc al terminal o a la CI.
   (`MIN_CORRIDOR`). Els projectils, dels dos bàndols, moren contra la roca
   amb una espurna.
 - **Terreny dibuixat (art) i fons amb profunditat** — a partir del nivell 4
-  (*Galeries d'autor*), el terreny no es descriu amb elevacions sinó amb
+  (*Galeries d'autor*; al 5, *Bastió urbà*, és l'art de tota una ciutat),
+  el terreny no es descriu amb elevacions sinó amb
   **ASCII art literal**: 20 files de dibuix on cada columna del nivell és una
   columna del dibuix, pintada cel·la a cel·la amb el seu caràcter i color.
   La col·lisió és directa: **presència de caràcter = roca**; espai = lliure.
@@ -177,7 +178,7 @@ Tots els paràmetres del joc són a l'inici de [`main.py`](main.py):
 | `PLAYER_HORIZONTAL_SPEED` | 3.5 | Velocitat horitzontal de la nau, en cel·les/tick |
 | `SHOT_SPEED` | 5.0 | Velocitat dels projectils del jugador, en cel·les/tick |
 | `SHOT_COOLDOWN_TICKS` | 2 | Ticks entre dispars consecutius |
-| `MAPS` / `CURRENT_MAP` | 4 nivells | Nivells de la campanya i nivell actiu |
+| `MAPS` / `CURRENT_MAP` | 5 nivells | Nivells de la campanya i nivell actiu |
 | `GAME_TICK` | 0.08 s | Segons per frame (menys = més ràpid) |
 | `ENEMY_TYPES` | 4 tipus (amb el cap) | Sprites, vides, punts, velocitat, dany i frequencia |
 | `SHIP_MAX_HP` / `STATUS_BAR_WIDTH` | 100 / 24 | Vida inicial del casc i celes de la barra |
@@ -194,14 +195,16 @@ R-TypeASCII/
 ├── main.py               # El motor del joc (render, entrada, campanya, CLI)
 ├── nivell_1.py           # Nivell 1: spawns + parets (terreny)
 ├── nivell_2.py           # Nivell 2: Escull de ferro
+├── nivell_3.py           # Nivell 3: El cap (arena del cap final)
 ├── nivell_4.py           # Nivell 4: Galeries d'autor (terreny dibuixat + fons)
+├── nivell_5.py           # Nivell 5: Bastió urbà (ciutat, grafitis i boss final)
 ├── nivell_<n>.py         # Més nivells: es carreguen en ordre numèric
 ├── eines_art.py          # Eina: valida i previsualitza l'art d'un nivell
 ├── README.md             # Documentació d'usuari (aquest fitxer)
 ├── PROJECT.md            # Documentació tècnica del projecte
 ├── PROJECT_SUMMARY.md    # Resum de disseny original (històric)
-├── _test_terreny.py      # Suite headless de proves del terreny (19 blocs)
-├── test_smoke.py          # Suite headless de proves del motor (106 comprovacions)
+├── _test_terreny.py      # Suite headless de proves del terreny (22 blocs)
+├── test_smoke.py         # Suite headless de proves del motor (106 comprovacions)
 ├── LICENSE                # Llicència MIT
 └── .github/               # CI (GitHub Actions) i plantilles d'issues
 ```
@@ -258,6 +261,13 @@ versionat amb [SemVer](https://semver.org/lang/ca/) i etiquetat a Git
   cristalls, túnel metàl·lic amb llums, cel amb illes flotants i un grafiti
   de roca R-TYPE, i sortida ampla — més un fons d'estels i muntanyes. El seu
   docstring és la referència del format nou.
+- **`nivell_5.py` (*BASTIÓ URBÀ*)**: final de campanya amb **art de ciutat**
+  (760 columnes): carrers entre blocs amb finestres enceses, tags i cartells
+  de neó, canyons que serpentejen, un **mural de grafiti «R-TYPE»** de 40
+  columnes i una plaça que s'obre a l'arena, amb un fons de cel, silueta
+  llunyana i carretera amb marques. El **cap final** torna al tick 505 per
+  defensar la ciutat: abatre'l completa la campanya. La suite de proves
+  incorpora els blocs 21-22 (cap en cel net, dibuix sencer creuant el camp).
 - **Validació de jugabilitat en carregar**: cada columna del dibuix ha de
   deixar un corredor d'almenys `MIN_CORRIDOR` cel·les i ha d'existir un camí
   lliure de la primera a la darrera columna (BFS): un dibuix que segelli el

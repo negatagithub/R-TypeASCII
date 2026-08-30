@@ -15,11 +15,14 @@ de canvis.
 | `main.py` | El motor sencer (1.281 línies): render, entrada, entitats, col·lisions, campanya i CLI |
 | `nivell_1.py` | Nivell 1 «PRIMER CONTACTE» (dades pures: `LEVEL`) |
 | `nivell_2.py` | Nivell 2 «ESCULL DE FERRO» (dades pures: `LEVEL`) |
+| `nivell_3.py` | Nivell 3 «EL CAP» (arena del cap, amb `BOSS_KIND`) |
+| `nivell_4.py` | Nivell 4 «GALERIES D'AUTOR» (referència del format d'art) |
+| `nivell_5.py` | Nivell 5 «BASTIÓ URBÀ» (final de campanya, art de ciutat) |
 | `nivell_<n>.py` | Nous nivells; el carregador els descobreix i ordena pel número |
 | `README.md` | Documentació d'usuari |
 | `PROJECT.md` | Aquest document |
 | `PROJECT_SUMMARY.md` | Resum de disseny original (històric) |
-| `_test_terreny.py` | Suite de proves headless (12 blocs): `python _test_terreny.py` |
+| `_test_terreny.py` | Suite de proves headless (22 blocs): `python _test_terreny.py` |
 | `test_smoke.py` | Suite headless del motor (15 blocs): `python test_smoke.py` (codi d'exit 0/1) |
 
 ## 2. El motor (`main.py`)
@@ -61,8 +64,9 @@ la mida del terminal:
 - Sprites: matrius de cel·les `(caràcter, color)` via `make_sprite`.
 - Enemics (`ENEMY_TYPES`): dron 3x1 —1 vida, 10 pts, 2 cel·les/tick—,
   caça 3x2 —2 vides, 30 pts, 1 cel·la/tick—, creuer 5x3 —4 vides, 80 pts,
-  més lent— i el **cap** (10x4, 30 vides, 500 pts, `BOSS_KIND`), que només
-  apareix al nivell 3. Danys per xoc: 10/20/35/45.
+  més lent— i el **cap** (10x4, 30 vides, 500 pts, `BOSS_KIND`), que apareix
+  al nivell 3 i torna com a final de campanya al nivell 5. Danys per xoc:
+  10/20/35/45.
 - Patrons de vol (`KIND_PATTERNS` + `_move_enemy`): `recta`, `ona`
   (sinusoidal), `zigzag` (rebot), `picat` (cap al terra), `puja` i `cap`
   (entra per la dreta, s'atura a `BOSS_STOP_COLS` i oscil·la).
@@ -229,6 +233,17 @@ final amb cristall).
 - **Nivell 4 nou** (*GALERIES D'AUTOR*): mostra petita del format nou (204
   columnes, 5 escenes, grafiti de roca R-TYPE, fons d'estels i muntanyes);
   el pilot automàtic la completa (`--demo 4`: COMPLETED amb 82/100 de casc).
+- **Nivell 5 nou** (*BASTIÓ URBÀ*, final de campanya): 760 columnes d'art de
+  **ciutat** —carrers entre blocs amb finestres enceses, tags i neons,
+  canyons serpentejants, un **mural de grafiti «R-TYPE»** de 40 columnes i
+  una plaça que s'obre a l'arena— amb fons de cel, silueta llunyana i
+  carretera amb marques (parallax). El **cap final** (boss del nivell 3)
+  torna al tick 505: matar-lo completa la campanya. L'art es genera amb
+  petits perfils deterministes (`ciutat()`) i lletres de grafiti de 4x5.
+  El pilot l'acaba (`--demo 5`: COMPLETED, abatent el cap).
+- **Tests**: la suite passa a 22 blocs: nous blocs 21-22 amb les garanties
+  del nivell 5 (el cap neix en cel net, abatre'l compleix el nivell i el
+  dibuix sencer de 760 columnes creua el camp).
 - **Pilot automàtic adaptat**: `_art_column_band()` (runs lliures per columna,
   illes flotants); `_corridor_free_band()` i `_ticks_until_wall()` entenen
   els dos formats i ignoren el fons.
