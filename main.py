@@ -32,6 +32,10 @@ Recompenses: alguns enemics abatuts deixen kits vermells que reparen el
 casc en tres mides; com mes gran es el kit, mes vida retorna i mes raro es.
 El kit mes rar de tots desplega un dron aliat que seguia la teva estela i
 dispara un projectil extra cada cop que dispres (maxim 4 drons).
+Un altre kit rar desplega missils guiats: cada cop que en reculls un, el
+nivell de missils puja (fins a 7 nivells, que son els missils maxims que
+poden planejar a l'escena alhora). Els missils surten sols del morro de la
+nau cada mig segon i cacen automaticament l'enemic mes proper.
 
 Sense parpalleig: cada frame es repinta sobre l'anterior movent el cursor
 a l'origen, sense esborrar la pantalla, i el cursor s'amaga durant el joc.
@@ -134,6 +138,9 @@ POWERUPS = (
     {"name": "dron aliat", "heal": 0, "weight": 1,      # el mes rar
      "wingman": True,
     "sprite": make_sprite(("<o>",), (("91", "93", "91"),))}, # mini dron
+    {"name": "missils", "heal": 0, "weight": 1,          # rar com el dron
+     "missile": True,
+    "sprite": make_sprite(("=>",), (("92", "93"),))},   # mini missil
 )
 POWERUP_DROP_WEIGHTS = tuple(p["weight"] for p in POWERUPS)
 POWERUP_NO_DROP_WEIGHT = 30    # pes de que l'enemic no deixi res
@@ -149,6 +156,21 @@ WINGMAN_SPRITE = make_sprite(("->",), (("96", "93"),))
 WINGMAN_W = len(WINGMAN_SPRITE[0])
 WINGMAN_H = len(WINGMAN_SPRITE)
 WINGMAN_SCORE_BONUS = 50       # punts quan el kit arriba amb l'esquadra plena
+
+# --- missils guiats (homing missiles) ---------------------------------------------
+# El kit de missils afegeix un nivell de guiatge: cada nivell permet un missil
+# mes a l'escena alhora (fins a MAX_MISSILES). Els missils surten sols del
+# morro cada mig segon (500ms ~ 6.25 ticks del bucle de 0.08s) i cacen
+# automaticament l'enemic mes proper. Si el reculls amb el nivell ple, es
+# converteix en punts bonus.
+MAX_MISSILES = 7
+MISSILE_INTERVAL_TICKS = 6.25   # cada 500ms (el joc corre a GAME_TICK=0.08s)
+MISSILE_SPEED = 6.0             # celes per tick (mes rapids que els trets)
+MISSILE_SPRITE = make_sprite(("=>",), (("92", "93"),))
+MISSILE_W = len(MISSILE_SPRITE[0])
+MISSILE_H = len(MISSILE_SPRITE)
+MISSILE_SCORE_BONUS = 50        # punts quan el kit arriba amb el nivell ple
+CODE_MISSILE = "92"             # missils guiats: verd brillant
 
 # Tipus d'enemic, de mes petit i feble a mes gran i cuirassat: cada entrada
 # defineix el sprite, quantes vides te (hp), quants punts dona, la velocitat
@@ -739,6 +761,50 @@ def make_enemy_shot(enemy: dict, target_x: float, target_y: float):
     }
 
 
+def make_missile(state: dict) -> dict:
+    """Crea un missil guiat que surt del morro de la nau, com els trets."""
+    return {"x": state["player_x"] + s_w_n(PLAYER_SPRITE),
+            "y": state["player_y"] + h_n(PLAYER_H // 2),
+            "vx": MISSILE_SPEED / SCREEN_WIDTH,
+            "vy": 0.0}
+
+
+def _home_missile(state: dict, missile: dict) -> None:
+    """Reorienta un missil cap a l'enemic mes proper i l'avanca un tick.
+
+    Si no hi ha cap enemic a la vista, el missil segueix recte cap a la
+    dreta. La velocitat es manté constant (MISSILE_SPEED celes/tick); nomes
+    canvia la direcció, apuntant al centre de l'objectiu.
+    """
+    missile["prev_x"] = missile["x"]
+    missile["prev_y"] = missile["y"]
+    mw, mh = s_w_n(MISSILE_SPRITE), s_h_n(MISSILE_SPRITE)
+    cx = missile["x"] + mw / 2
+    cy = missile["y"] + mh / 2
+    best, best_d2 = None, None
+    for enemy in state["enemies"]:
+        ex, ey, ew, eh = enemy_rect(enemy)
+        ecx = ex + ew / 2
+        ecy = ey + eh / 2
+        d2 = (ecx - cx) ** 2 + (ecy - cy) ** 2
+        if best is None or d2 < best_d2:
+            best, best_d2 = (ecx, ecy), d2
+    if best is None:
+        missile["vx"] = MISSILE_SPEED / SCREEN_WIDTH
+        missile["vy"] = 0.0
+    else:
+        dx, dy = best[0] - cx, best[1] - cy
+        dist = math.hypot(dx, dy)
+        if dist <= 0.0:
+            missile["vx"] = MISSILE_SPEED / SCREEN_WIDTH
+            missile["vy"] = 0.0
+        else:
+            missile["vx"] = dx / dist * MISSILE_SPEED / SCREEN_WIDTH
+            missile["vy"] = dy / dist * MISSILE_SPEED / SCREEN_HEIGHT
+    missile["x"] += missile["vx"]
+    missile["y"] = max(0.0, min(1.0 - mh, missile["y"] + missile["vy"]))
+
+
 def roll_powerup_drop():
     """Sorteja quin kit cau d'un enemic abatut (o None si no en cau cap).
 
@@ -770,6 +836,9 @@ def new_state():
         "enemy_shots": [],               # projectils enemics amb angle variable
         "effects": [],                   # efectes d'impacte temporals
         "powerups": [],                  # kits de reparacio flotants
+        "missiles": [],                  # missils guiats en vol
+        "missile_level": 0,              # nivell de missils (max 7 a l'escena)
+        "missile_cooldown": 0.0,         # ticks que falten pel proper missil
         "terrain": [],                   # columnes de paret en pantalla
         "hp": SHIP_MAX_HP,               # vida restant del casc
         "wingmans": 0,                   # drons aliats actius (max 4)
@@ -933,6 +1002,26 @@ def rects_overlap(x1, y1, w1, h1, x2, y2, w2, h2) -> bool:
     """
     return (x1 < x2 + w2 and x2 < x1 + w1 and
             y1 < y2 + h2 and y2 < y1 + h1)
+
+
+def _swept_hits(px: float, py: float, x: float, y: float,
+                w: float, h: float, rects) -> bool:
+    """Cert si l'avenç (px,py)->(x,y) d'un rectangle w x h toca algun recte.
+
+    Mostreja la trajectoria en passos de mitja cel·la per no saltar-se
+    obstacles prims amb projectils rapids (els missils guiats es mouen en
+    diagonal a MISSILE_SPEED celes/tick).
+    """
+    step = 0.5 / min(SCREEN_WIDTH, SCREEN_HEIGHT)
+    steps = max(1, int(max(abs(x - px), abs(y - py)) / step) + 1)
+    for k in range(1, steps + 1):
+        t = k / steps
+        cx = px + t * (x - px)
+        cy = py + t * (y - py)
+        for r in rects:
+            if rects_overlap(cx, cy, w, h, *r):
+                return True
+    return False
 
 
 def enemy_rect(en: dict):
@@ -1104,6 +1193,30 @@ def _move_enemy(enemy: dict, tick: int) -> None:
             enemy["vy"] = -1
 
 
+def _destroy_enemy(state: dict, enemy: dict, ex: float, ey: float,
+                   ew: float, eh: float) -> None:
+    """Aplica la baixa d'un enemic: punts, explosio i possible recompensa.
+
+    Comparteix la logica entre els trets normals del cano i els missils
+    guiats: punts del tipus, explosio al centre (grossa pels grans),
+    desenllac del cap final i sorteig del kit que deixa caure.
+    """
+    state["score"] += ENEMY_TYPES[enemy["kind"]]["points"]
+    state["effects"].append(make_effect(
+        ex + ew / 2, ey + eh / 2,
+        BOOM_FRAMES if ew >= 3.0 / SCREEN_WIDTH else SPARK_FRAMES))
+    if enemy["kind"] == BOSS_KIND:
+        state["completed"] = True
+        if random.random() < BOSS_DROP_CHANCE:
+            state["powerups"].append(
+                make_powerup(ex + ew / 2, ey + eh / 2, BOSS_DROP_KIND))
+    else:
+        drop = roll_powerup_drop()
+        if drop is not None:
+            state["powerups"].append(
+                make_powerup(ex + ew / 2, ey + eh / 2, drop))
+
+
 def update_world(state: dict) -> None:
     """Avanca un tick: mou enemics/projectils, spawneja i resol impactes."""
     state["ticks"] += 1
@@ -1219,6 +1332,19 @@ def update_world(state: dict) -> None:
             remaining_enemy_shots.append(shot)
     state["enemy_shots"] = remaining_enemy_shots
 
+    # --- missils guiats: surten del morro cada 500ms i cacen l'enemic -------
+    # Cada nivell (missile_level) limita quants missils poden ser a l'escena
+    # alhora (fins a MAX_MISSILES). Surten sols, sense caldre disparar, i es
+    # reorienten cap a l'enemic mes proper a cada tick.
+    if state.get("missile_level", 0) > 0:
+        state["missile_cooldown"] -= 1.0
+        if state["missile_cooldown"] <= 0.0:
+            if len(state["missiles"]) < state["missile_level"]:
+                state["missiles"].append(make_missile(state))
+            state["missile_cooldown"] = MISSILE_INTERVAL_TICKS
+    for missile in state["missiles"]:
+        _home_missile(state, missile)
+
     # --- kits de reparacio: deriven cap a l'esquerra i es poden recollir ----
     # Aquest bloc va ABANS de resoldre els impactes: aixi els kits que neixen
     # d'una baixa apareixen exactament al punt de l'explosio i no es mouen
@@ -1240,6 +1366,14 @@ def update_world(state: dict) -> None:
                     state["wingmans"] += 1
                 else:
                     state["score"] += WINGMAN_SCORE_BONUS
+            elif p.get("missile"):
+                # Missils guiats: cada kit afegeix un nivell (un missil mes
+                # a la escena). Amb el nivell ple, es converteix en punts
+                # bonus, com els drons.
+                if state["missile_level"] < MAX_MISSILES:
+                    state["missile_level"] += 1
+                else:
+                    state["score"] += MISSILE_SCORE_BONUS
             else:
                 state["hp"] = min(SHIP_MAX_HP, state["hp"] + p["heal"])
             continue                            # recollit
@@ -1292,39 +1426,64 @@ def update_world(state: dict) -> None:
                 enemy["hp"] -= 1                # els grans aguanten mes d'un toc
                 if enemy["hp"] <= 0:
                     dead_enemies.add(j)
-                    state["score"] += ENEMY_TYPES[enemy["kind"]]["points"]
-                    # Explosio al centre de l'enemic abatut; com mes gros,
-                    # mes grossa la deflagracio.
-                    state["effects"].append(make_effect(
-                        ex + ew / 2, ey + eh / 2,
-                        BOOM_FRAMES if ew >= 3.0 / SCREEN_WIDTH
-                        else SPARK_FRAMES))
-                    # Recompensa i desenllac del cap final: derrotar-lo
-                    # completa l'escenari immediatament (encara que quedin
-                    # ticks de mapa) i deixa caure un kit gran amb certa
-                    # probabilitat; els altres enemics segueixen el sorteig.
-                    if enemy["kind"] == BOSS_KIND:
-                        state["completed"] = True
-                        if random.random() < BOSS_DROP_CHANCE:
-                            state["powerups"].append(
-                                make_powerup(ex + ew / 2, ey + eh / 2,
-                                             BOSS_DROP_KIND))
-                    else:
-                        drop = roll_powerup_drop()
-                        if drop is not None:
-                            state["powerups"].append(
-                                make_powerup(ex + ew / 2, ey + eh / 2, drop))
+                    _destroy_enemy(state, enemy, ex, ey, ew, eh)
                 break                           # cada projectil pega un sol cop
+
+    # --- missils guiats: impactes contra roca i enemics -----------------------
+    # S'afegeixen a la mateixa llista d'enemics morts: aixi un enemic de baixa
+    # hp pot ser rematat per un tret i un missil el mateix tick. La col·lisio
+    # es resolt amb un recorregut mostrejat (_swept_hits) perque els missils
+    # volen en diagonal i son rapids.
+    mist_w, miss_h = s_w_n(MISSILE_SPRITE), s_h_n(MISSILE_SPRITE)
+    dead_missiles = set()
+    for i, missile in enumerate(state["missiles"]):
+        if i in dead_missiles:
+            continue
+        mx, my = missile["x"], missile["y"]
+        # La roca atura els missils: espurna a la vora i fora.
+        wall_rects = [wr for column in state["terrain"]
+                      for wr in terrain_rects(column)]
+        if _swept_hits(missile.get("prev_x", mx), missile.get("prev_y", my),
+                       mx, my, mist_w, miss_h, wall_rects):
+            state["effects"].append(make_effect(mx, my, SPARK_FRAMES))
+            dead_missiles.add(i)
+            continue
+        for j, enemy in enumerate(state["enemies"]):
+            if j in dead_enemies:
+                continue
+            ex, ey, ew, eh = enemy_rect(enemy)
+            if _swept_hits(missile.get("prev_x", mx),
+                           missile.get("prev_y", my),
+                           mx, my, mist_w, miss_h, [(ex, ey, ew, eh)]):
+                state["effects"].append(make_effect(mx, my, SPARK_FRAMES))
+                dead_missiles.add(i)
+                enemy["hp"] -= 1                # els grans aguanten mes d'un toc
+                if enemy["hp"] <= 0:
+                    dead_enemies.add(j)
+                    _destroy_enemy(state, enemy, ex, ey, ew, eh)
+                break                           # cada missil pega un sol cop
+
     if dead_shots:
         state["shots"] = [s for i, s in enumerate(state["shots"])
                           if i not in dead_shots]
+    if dead_missiles:
+        state["missiles"] = [m for i, m in enumerate(state["missiles"])
+                             if i not in dead_missiles]
+    if dead_shots or dead_missiles:
         state["enemies"] = [e for j, e in enumerate(state["enemies"])
                             if j not in dead_enemies]
+    # Els missils que han volat i han sortit del camp (per la dreta o, si
+    # cacen un enemic que ja ha passat, per l'esquerra) també es retiren.
+    state["missiles"] = [m for m in state["missiles"]
+                         if -mist_w < m["x"] < 1.0]
     # Les posicions previes ja no fan falta fins al proper tick.
     for enemy in state["enemies"]:
         enemy.pop("prev_x", None)
     for shot in state["shots"]:
         shot.pop("prev_x", None)
+    for missile in state["missiles"]:
+        missile.pop("prev_x", None)
+        missile.pop("prev_y", None)
 
     # --- colisions contra la nau: dany pesat i enemic esbucat ----------------
     # Cada enemic que toca el casc li fa el dany del seu tipus i explota al
@@ -1448,6 +1607,11 @@ def draw_shot(shot: dict) -> None:
     draw_sprite(SHOT_SPRITE, shot["x"], shot["y"], CODE_SHOT)
 
 
+def draw_missile(missile: dict) -> None:
+    """Dibuixa un missil guiat amb el seu color verd caracteristic."""
+    draw_sprite(MISSILE_SPRITE, missile["x"], missile["y"], CODE_MISSILE)
+
+
 def draw_enemy_shot(shot: dict) -> None:
     """Dibuixa un projectil enemic amb una marca visual d'alerta fixa."""
     draw_sprite(ENEMY_SHOT_SPRITE, shot["x"], shot["y"])
@@ -1542,6 +1706,8 @@ def render(state: dict) -> str:
         draw_terrain_column(column)
     for shot in state["shots"]:
         draw_shot(shot)
+    for missile in state["missiles"]:
+        draw_missile(missile)
     for shot in state["enemy_shots"]:
         draw_enemy_shot(shot)
     for enemy in state["enemies"]:
@@ -1596,6 +1762,11 @@ def render(state: dict) -> str:
     map_percent = int(map_progress * 100)
     status = (paint(f" CASC [{gauge}] {hp}/{SHIP_MAX_HP}", gauge_code)
               + paint(f"   MAPA [{map_gauge}] {map_percent:3d}%", "96"))
+    # Nivell de missils guiats: nomes es mostra un cop s'ha recollit el primer
+    # kit (missile_level > 0). El verd combina amb el seu sprite.
+    missile_level = state.get("missile_level", 0)
+    if missile_level:
+        status += paint(f"   MISSL {missile_level}/{MAX_MISSILES}", "92")
     # Barra de vida del cap final (si encomana): nomes es mostra mentre el cap
     # es viu, despres de la barra de mapa. El magenta combina amb el seu
     # sprite multicolor.
@@ -1650,8 +1821,15 @@ def animate_completion(state: dict) -> None:
         state["terrain"] = []
         state["hide_player"] = True
         return
-    # Mostra el banner centrat en una pantalla separada
+    # Mostra el banner centrat en una pantalla separada; si queda campanya,
+    # s'hi afegeix el nom del seguent nivell: com que el pas al seguent
+    # nivell es automatic (sense pausa ni pantalla intermedia), aquest
+    # banner es l'unic avis de la transicio.
     banner_lines = paint(COMPLETION_BANNER, "92").splitlines()
+    if CURRENT_MAP + 1 < len(MAPS):
+        banner_lines.append(paint(f"   Seguent: "
+                                  f"{MAPS[CURRENT_MAP + 1]['name']}",
+                                  CODE_HINT))
     padding = (SCREEN_HEIGHT - len(banner_lines)) // 2
     banner_block = "\n".join([""] * padding + banner_lines + [""] * padding)
     draw_frame(banner_block)
@@ -1741,8 +1919,8 @@ def show_game_over(score: int, completed: bool = False,
     print(paint("   MILLORS PUNTUACIONS", CODE_HUD))
     for line in scores_block().splitlines():
         print(paint(line, CODE_HUD))
-    print(paint(f" Prem '{KEY_REPLAY}' per tornar a jugar, o qualsevol altra "
-                f"tecla per sortir.", CODE_HINT))
+    print(paint(f" Prem qualsevol tecla per repetir el nivell, o "
+                f"'{KEY_QUIT}' per sortir.", CODE_HINT))
 
 
 def show_campaign_complete(score: int, record: bool = False) -> None:
@@ -2174,31 +2352,30 @@ def main() -> None:
             record = save_score(score)     # desa al top (no en demo)
             if outcome == "completed" and CURRENT_MAP + 1 < len(MAPS):
                 # Nivell superat i en queden mes: la campanya continua amb el
-                # seguent fitxer de nivell. En premer 'r' es mostra la
-                # introduccio del nou nivell i s'hi passa.
+                # seguent fitxer de nivell SENSE cap pausa, pantalla
+                # intermedia ni espera de tecles (l'animacio de fi de nivell
+                # ja ha anunciat el nom del seguent). Una pulsacio accidental
+                # no pot tancar mai el programa entre nivells.
                 CURRENT_MAP += 1
-                print()
-                print(paint(f" NIVELL SUPERAT - puntuacio: {score}", "92"))
-                print(paint(f"   Seguent: {MAPS[CURRENT_MAP]['name']}",
-                            CODE_HINT))
-                print(paint(f" Prem '{KEY_REPLAY}' per continuar al seguent "
-                            f"nivell, o qualsevol altra tecla per sortir.",
-                            CODE_HINT))
-                if wait_key() != KEY_REPLAY:
-                    break
-                show_intro()
                 continue
             if outcome == "completed":
                 # Era l'ultim nivell de la campanya.
                 show_campaign_complete(score, record)
             else:
                 show_game_over(score, record=record)
-            if wait_key() != KEY_REPLAY:
-                break
+            tecla = wait_key()
             if outcome == "completed":
-                # La campanya sencera es reinicia des del primer nivell.
+                # Fi de campanya: 'r' la reinicia des del primer nivell;
+                # qualsevol altra tecla acaba el programa (fi natural del joc).
+                if tecla != KEY_REPLAY:
+                    break
                 CURRENT_MAP = 0
                 show_intro()
+            elif tecla is None or tecla == KEY_QUIT:
+                # Derrota: nomes 'q' (o una consola sense teclat) abandona.
+                break
+            # Qualsevol altra tecla despres del game over repeteix el mateix
+            # nivell directament, sense passar per la introduccio.
 
         clear_screen()
         if DEMO_MODE:

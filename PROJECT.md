@@ -59,7 +59,8 @@ la mida del terminal:
 ### 2.4 Entitats i estat
 - `new_state()` crea l'estat de la ronda: `player_x/y`, `ship_prev_x`
   (creuaments de paret), `hp`, `score`, `wingmans`, `trail`, `shots`,
-  `enemy_shots`, `enemies`, `powerups`, `effects`, `ticks`, `map`,
+  `enemy_shots`, `missiles` (projectils guiats), `missile_level`,
+  `missile_cooldown`, `enemies`, `powerups`, `effects`, `ticks`, `map`,
   `map_progress`, `completed`, `terrain`.
 - Sprites: matrius de cel·les `(caràcter, color)` via `make_sprite`.
 - Enemics (`ENEMY_TYPES`): dron 3x1 —1 vida, 10 pts, 2 cel·les/tick—,
@@ -78,9 +79,15 @@ la mida del terminal:
   (`BOSS_PUSH_COLS`) sense ser destruït.
 - Projectils del jugador a 5 cel·les/tick (`SHOT_SPEED`), cooldown de 2
   ticks; els enemics disparen projectils angulars cap a la nau.
-- Kits de reparació: petit +15, mitjà +30, gran +60 i dron aliat (fins a
-  `MAX_WINGMANS = 4`; amb l'esquadra plena val `WINGMAN_SCORE_BONUS = 50`).
-  Probabilitats de drop 7:3:2:1.
+- Kits de reparació: petit +15, mitjà +30, gran +60, dron aliat (fins a
+  `MAX_WINGMANS = 4`; amb l'esquadra plena val `WINGMAN_SCORE_BONUS = 50`)
+  i missils guiats (fins a `MAX_MISSILES = 7` a l'escena alhora; amb el
+  nivell ple val `MISSILE_SCORE_BONUS = 50`). Probabilitats de drop
+  7:3:2:1:1.
+- Missils guiats: `make_missile` els crea al morro i `_home_missile` els
+  reorienta cada tick cap a l'enemic més proper (`MISSILE_SPEED = 6`
+  cel·les/tick); surten sols cada `MISSILE_INTERVAL_TICKS = 6.25` ticks
+  (500 ms a 12.5 FPS) mentre hi hagi lloc a l'escena.
 - Efectes: `SPARK_FRAMES` (espurnes) i `BOOM_FRAMES` (explosions), amb
   envelliment per tick.
 
@@ -88,6 +95,9 @@ la mida del terminal:
 - `rects_overlap` sobre rectangles normalitzats + detecció de **creuament**
   dins del mateix tick (objectes més ràpids que l'amplada d'una cel·la):
   projectil-enemic, projectil-paret i nau-paret (via `ship_prev_x`).
+- Els **missils guiats** usen `_swept_hits`: la seva trajectòria diagonal
+  i ràpida es mostreja en passos de mitja cel·la per no saltar-se
+  enemics prims ni parets.
 - Xoc nau-enemic: l'enemic explota i resta el seu dany al casc.
 - **Xoc nau-paret: destrucció immediata de la nau.**
 
@@ -95,7 +105,11 @@ la mida del terminal:
 `main()` → `level_from_args()` (CLI) → `fit_playfield_to_terminal()` →
 `show_intro()` → bucle de rondes `run_round()` (frames cada
 `GAME_TICK = 0.08 s`, ~12.5 FPS) → resultat `quit` / `dead` / `completed`
-→ pantalles de fi i gestió de campanya.
+→ gestió de campanya: `completed` amb nivells pendents passa al següent
+IMMEDIATAMENT (sense pausa, pantalla ni tecla; el banner de fi de nivell
+anuncia el nom del següent); `dead` → game over on qualsevol tecla repeteix
+el nivell (`q` surt); últim `completed` → `show_campaign_complete()` amb
+`r` per reiniciar la campanya des del nivell 1.
 
 ## 3. Sistema de nivells
 
@@ -186,9 +200,11 @@ murs de 8-10 files, S doble, serra triple, cadena cada 10 ticks i gola
 final amb cristall).
 
 ## 4. Campanya i línia de comandes
-- `main()` avança `CURRENT_MAP` en completar cada nivell i presenta el
-  següent; en acabar l'últim mostra `show_campaign_complete()` i permet
-  reiniciar la campanya des del nivell 1. Si la nau mor, es repeteix el
+- `main()` avança `CURRENT_MAP` en completar cada nivell i el següent comença
+  immediatament: sense pausa, pantalla intermèdia ni espera de tecles (una
+  pulsació accidental no pot tancar el programa entre nivells). En acabar
+  l'últim mostra `show_campaign_complete()` i `r` reinicia la campanya des
+  del nivell 1. Si la nau mor, qualsevol tecla (menys `q`) repeteix el
   mateix nivell.
 - `python main.py [nivell]` — `level_from_args()` valida l'argument: número
   vàlid → nivell inicial (mode testing), `-h/--ajuda` → ús, invàlid →
@@ -204,6 +220,12 @@ final amb cristall).
   disseny de tots els nivells (spawns dins de durada, cap spawn sobre
   paret, corredor mínim), `wait_key` amb buffer brut (consola falsa) i
   `level_from_args` (casos vàlids, invàlids i `-h`).
+- `_sim_campanya.py`: headless, substitueix `run_round`/`wait_key`/pantalles
+  per stubs i verifica el flux EXACTE de `main()`: pas automàtic entre
+  nivells (cap tecla ni pantalla intermèdia), banner amb el nom del nivell
+  següent, game over tolerant (qualsevol tecla repeteix, `q` surt) i
+  reinici de campanya amb `r`. Fixa `COLOR_ENABLED = False` perquè els
+  renders siguin deterministes en qualsevol consola.
 - `test_smoke.py`: suite de les primeres iteracions. El seu harness tenia
   un bug (no restaurava la base 60x18) ja corregit; queden 17 FALLs per
   drift amb la mecànica actual, documentats i pendents de modernitzar.
@@ -215,10 +237,20 @@ final amb cristall).
 - A l'animació de final de nivell el terreny desapareix (la nau surt volant
   per un camp net).
 - Si es prem una tecla durant l'animació de final de nivell, es descarta
-  (els menús buiden el buffer); cal respondre quan apareix el missatge.
+  (els menús buiden el buffer); el pas al següent nivell és automàtic i no
+  demana cap confirmació.
 - `test_smoke.py` desactualitzat (vegeu §5).
 
 ## 7. Registre de canvis
+
+### 2026-09-01
+- **Campanya contínua**: en superar un nivell el següent comença
+  immediatament —eliminada la pantalla «NIVELL SUPERAT» que exigia prémer
+  `r` (qualsevol altra tecla, p. ex. Retorn, tancava el programa entre
+  nivells). El banner de fi de nivell ara anuncia el nom del nivell següent.
+- **Game over tolerant**: qualsevol tecla repeteix el nivell; només `q`
+  surt (abans, qualsevol tecla que no fos `r` abandonava el joc). La
+  pantalla «CAMPANYA COMPLETADA» manté la semàntica `r` = reiniciar.
 
 ### 2026-08-30
 - **Terreny dibuixat (art)**: nou format de nivell amb dibuix literal a 20

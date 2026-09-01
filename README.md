@@ -37,7 +37,7 @@ python main.py --demo 2         # demo del nivell 2
 | `ESPAI` | Disparar (mantenir-lo premut = tir continu) |
 | `p` | Pausa: congela la partida; `p` altre cop continua, `q` surt |
 | `q` | Sortir |
-| `r` | Continuar (repetir després del game over, o passar al nivell següent) |
+| `r` | A la pantalla «Campanya completada»: repetir la campanya des del nivell 1 |
 
 L'entrada es llegeix per **estat del teclat** a cada frame (via
 `GetAsyncKeyState`): pots mantenir les tecles premudes i combinar-ne diverses
@@ -102,6 +102,12 @@ complet del joc al terminal o a la CI.
   que seguia l'estela de la nau i dispara un projectil addicional cada
   cop que dispres. Maxim 4 drons; si en reps un amb l'esquadra plena,
   es converteix en +50 punts.
+- **Missils guiats** — un altre kit rar desplega missils verd-grocs (`=>`)
+  que surten sols del morro de la nau cada mig segon i **cacen
+  automàticament l'enemic més proper**. Cada kit puja un nivell (fins a
+  7 nivells, que son els missils maxims que poden planejar a l'escena
+  alhora); amb el nivell ple, el kit es converteix en +50 punts. El HUD
+  mostra `MISSL n/7` un cop reculls el primer.
 - **Efectes d'impacte** — cada toc genera una espurna groga (`*` `+` `.`)
   on aterra el projectil; en abatre un enemic, aquest explota al centre
   amb una animacio mes gran com mes gran sigui (drons: espurna; cacers
@@ -136,9 +142,13 @@ complet del joc al terminal o a la CI.
   partida acaba amb la pantalla de nivell completat quan la barra de mapa
   arriba al 100% —excepte al nivell 3 (*El cap*), on derrotar el cap final
   es tanca el nivell a l'instant.
-- **Campanya** — en superar un nivell s'avança automàticament al següent
-  (els fitxers `nivell_<n>.py` es carreguen en ordre numèric). En completar
-  l'últim nivell pots reiniciar la campanya des del principi.
+- **Campanya** — en superar un nivell s'avança automàticament al següent,
+  sense cap pausa, pantalla intermèdia ni tecla de confirmació: acabada
+  l'animació de fi de nivell (el banner en mostra el nom), el nivell següent
+  comença a l'instant (els fitxers `nivell_<n>.py` es carreguen en ordre
+  numèric). En completar l'últim nivell pots reiniciar la campanya des del
+  principi. Si la nau és destruïda, qualsevol tecla repeteix el mateix
+  nivell i només `q` surt del joc.
 - **Parets i terreny** — cada nivell pot definir parets a dalt i a baix del
   camp per **elevacions**: un valor en cel·les per CADA columna, amb caràcter
   i color propis per a la vora i per a l'interior de la paret (i substitucions
@@ -178,13 +188,15 @@ Tots els paràmetres del joc són a l'inici de [`main.py`](main.py):
 | `PLAYER_HORIZONTAL_SPEED` | 3.5 | Velocitat horitzontal de la nau, en cel·les/tick |
 | `SHOT_SPEED` | 5.0 | Velocitat dels projectils del jugador, en cel·les/tick |
 | `SHOT_COOLDOWN_TICKS` | 2 | Ticks entre dispars consecutius |
-| `MAPS` / `CURRENT_MAP` | 5 nivells | Nivells de la campanya i nivell actiu |
+| `MAPS` / `CURRENT_MAP` | 6 nivells | Nivells de la campanya i nivell actiu |
 | `GAME_TICK` | 0.08 s | Segons per frame (menys = més ràpid) |
 | `ENEMY_TYPES` | 4 tipus (amb el cap) | Sprites, vides, punts, velocitat, dany i frequencia |
 | `SHIP_MAX_HP` / `STATUS_BAR_WIDTH` | 100 / 24 | Vida inicial del casc i celes de la barra |
 | `MIN_CORRIDOR` | 6 | Celes lliures mínimes entre parets del terreny |
 | `ART_CANON_H` / `FONS_EVERY` | 20 / 4 | Alçada de disseny de l'art dibuixat i ticks per avançar una columna de fons |
-| `POWERUPS` / `POWERUP_NO_DROP_WEIGHT` | 3 mides / 30 | Kits de reparacio (cura, sprite) i pes de no-drop |
+| `POWERUPS` / `POWERUP_NO_DROP_WEIGHT` | 5 tipus (3 kits + dron + missils) / 30 | Kits de reparacio (cura, sprite), dron aliat i missils guiats; pes de no-drop |
+| `MAX_MISSILES` / `MISSILE_INTERVAL_TICKS` | 7 / 6.25 | Missils guiats: nivells (missils maxims a l'escena) i ticks entre llançaments (500ms) |
+| `MISSILE_SPEED` | 6.0 | Velocitat dels missils guiats, en cel·les/tick |
 | `BOSS_MAX_HP` / `BOSS_BAR_WIDTH` | 30 / 22 | Vida del cap final i celes de la seva barra a l'HUD |
 | `BOSS_DROP_KIND` / `BOSS_DROP_CHANCE` | 2 / 0.65 | Kit gran que deixa el cap en caure i probabilitat |
 

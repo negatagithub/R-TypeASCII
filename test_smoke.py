@@ -421,10 +421,11 @@ g.COLOR_ENABLED = False
 
 # --- 12. powerups: kits de reparacio i dron aliat ------------------------------
 check("starts without powerups", orig_new_state()["powerups"] == [])
-check("drop weights incl. dron rar", g.POWERUP_DROP_WEIGHTS == (7, 3, 2, 1))
+check("drop weights incl. rares (dron + missils)",
+      g.POWERUP_DROP_WEIGHTS == (7, 3, 2, 1, 1))
 random.seed(5)
 check("drops always valid",
-      all(g.roll_powerup_drop() in (None, 0, 1, 2, 3) for _ in range(200)))
+      all(g.roll_powerup_drop() in (None, 0, 1, 2, 3, 4) for _ in range(200)))
 sp_sprite = g.POWERUPS[0]["sprite"]
 bg = g.POWERUPS[2]["sprite"]
 k_small = g.make_powerup(0.5, 0.5, 0)
@@ -522,6 +523,73 @@ g.update_world(st)
 check("extra dron converts to bonus points",
       st["wingmans"] == g.MAX_WINGMANS
       and st["score"] == before + g.WINGMAN_SCORE_BONUS)
+
+# --- 13b. missils guiats (homing missiles) ---------------------------------------
+check("starts without missiles",
+      orig_new_state()["missiles"] == []
+      and orig_new_state()["missile_level"] == 0
+      and orig_new_state()["missile_cooldown"] == 0.0)
+# Kit de missils que solapa amb la nau: puja un nivell de guiatge.
+st = quiet(col(10), row(8))
+st["powerups"].append(g.make_powerup(st["player_x"] + 4 / 60,
+                                     st["player_y"] + 1 / 18, 4))
+g.update_world(st)
+check("missile kit raises the level",
+      st["missile_level"] == 1 and st["powerups"] == [])
+# Nivell ple: el kit extra es converteix en punts bonus.
+st = quiet(col(10), row(8))
+st["missile_level"] = g.MAX_MISSILES
+before = st["score"]
+st["powerups"].append(g.make_powerup(st["player_x"] + 4 / 60,
+                                     st["player_y"] + 1 / 18, 4))
+g.update_world(st)
+check("extra missile kit converts to bonus points",
+      st["missile_level"] == g.MAX_MISSILES
+      and st["score"] == before + g.MISSILE_SCORE_BONUS)
+# Sense kit recollit (nivell 0) no surt cap missil per molt que passin ticks.
+st = quiet(col(3), row(8))
+g.update_world(st)
+check("no missiles without level", st["missiles"] == [])
+# Amb nivell 1, el primer missil neix sol del morro (cooldown inicial zero)
+# i el segon ha d'esperar MISSILE_INTERVAL_TICKS ticks (500ms a 12.5 FPS).
+st = quiet(col(3), row(8))
+st["missile_level"] = 1
+st["missile_cooldown"] = 0.0
+g.update_world(st)
+nose_x = st["player_x"] + g.s_w_n(g.PLAYER_SPRITE)
+nose_y = st["player_y"] + g.h_n(g.PLAYER_H // 2)
+check("missile fires automatically from the nose",
+      len(st["missiles"]) == 1
+      and isclose(st["missiles"][0]["x"], nose_x + g.MISSILE_SPEED / 60)
+      and isclose(st["missiles"][0]["y"], nose_y)
+      and st["missile_cooldown"] == g.MISSILE_INTERVAL_TICKS)
+check("missiles do not fire again before cooldown",
+      st["missile_cooldown"] > 1.0 and len(st["missiles"]) == 1)
+# Els missils cacen l'enemic mes proper: un dron davant a la mateixa fila
+# cau (puntuacio inclosa) i el missil es consumeix.
+g.random.seed(1)
+st = quiet(col(2), row(9))
+st["missile_level"] = 1
+st["missile_cooldown"] = 0.0
+d = mk(DRONE, col(20), row(9))
+st["enemies"] = [d]
+for _t in range(30):
+    g.update_world(st)
+    if not st["missiles"] and not st["enemies"]:
+        break
+check("missile homes into the drone",
+      st["enemies"] == [] and st["missiles"] == []
+      and st["score"] == g.ENEMY_TYPES[DRONE]["points"])
+# El render pinta el missil al punt exacte i el HUD mostra el nivell.
+st = quiet(col(3), row(8))
+st["missiles"].append({"x": col(20), "y": row(4),
+                       "vx": 0.0, "vy": 0.0})
+miss_lines = g.render(st).splitlines()
+field_m = miss_lines[1:-1]
+check("missile drawn", field_m[4][20] == "=" and field_m[4][21] == ">")
+st["missile_level"] = 2
+hud_last = g.render(st).splitlines()[-1]
+check("hud shows the missile level", f"MISSL 2/{g.MAX_MISSILES}" in strip_ansi(hud_last))
 
 # --- 14. mode demo: pilot automatic determinista -------------------------------
 check("demo level args: plain campaign",

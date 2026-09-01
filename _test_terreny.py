@@ -1,8 +1,15 @@
 """Proves rapides del terreny i del carregador de nivells (fitxer temporal)."""
 import main
 
-# 1. Els nivells venen dels fitxers numerats, en ordre (5 d'art)
-assert len(main.MAPS) == 5
+# Suite headless: els asserts de render miren columnes de caracters, no
+# codis ANSI (el mateix que fa test_smoke.py). Sense aixo, en una consola
+# amb VT activa els renders contenen sequencies d'escapament i les
+# posicions de caracter no coincideixen amb les columnes del camp.
+main.COLOR_ENABLED = False
+import main
+
+# 1. Els nivells venen dels fitxers numerats, en ordre (6 d'art)
+assert len(main.MAPS) == 6
 m = main.MAPS[0]
 assert m["name"] == "NIVELL 1 - PRIMER CONTACTE"
 assert len(m["spawns"]) == 59, len(m["spawns"])
@@ -21,6 +28,9 @@ assert main.MAPS[3]["name"] == "NIVELL 4 - GALERIES D'AUTOR"
 assert main.MAPS[4]["name"] == "NIVELL 5 - BASTIO URBA"
 assert any(s[1] == main.BOSS_KIND for s in main.MAPS[4]["spawns"])
 assert main.MAPS[4]["art_columns"] and main.MAPS[4]["fons_columns"]
+assert main.MAPS[5]["name"] == "NIVELL 6 - NEON ESPACIAL"
+assert any(s[1] == main.BOSS_KIND for s in main.MAPS[5]["spawns"])
+assert main.MAPS[5]["art_columns"] and main.MAPS[5]["fons_columns"]
 
 # 2. fit_corridor garanteix el corredor minim
 t, b = main.fit_corridor(50, 50)
@@ -93,7 +103,7 @@ assert st4["map_progress"] == 1.0
 assert not st4["terrain"] or all(c["x"] < 1.0 for c in st4["terrain"])
 
 # 9. garanties de disseny de TOTS els nivells: dins de durada i passables
-assert len(main.MAPS) == 5, len(main.MAPS)
+assert len(main.MAPS) == 6, len(main.MAPS)
 assert len(main.MAPS[0]["spawns"]) == 59
 assert len(main.MAPS[1]["spawns"]) == 84
 for idx, mapa in enumerate(main.MAPS, start=1):
