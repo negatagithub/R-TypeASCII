@@ -824,10 +824,19 @@ def make_powerup(cx: float, cy: float, kind: int) -> dict:
             "kind": kind}
 
 
+# --- estat heretat entre nivells de la campanya ---------------------------------
+# En passar automaticament d'un nivell al següent (sense reinici), el jugador
+# conserva els seus powerups: la vida que li queda, l'esquadra de drons
+# (wingmans), el nivell de missils guiats i la puntuació acumulada. `run_round`
+# l'omple en superar un nivell, `new_state` el torna a aplicar al següent i es
+# buida en morir, sortir o reiniciar la campanya.
+ESTAT_HERETAT = {}
+
+
 def new_state():
     """Crea un diccionari d'estat nou per a una ronda."""
     game_map = MAPS[CURRENT_MAP]
-    return {
+    state = {
         "player_x": w_n(PLAYER_START_X),
         "player_y": 0.5,
         "ship_prev_x": w_n(PLAYER_START_X),  # d'on venia la nau: creuaments de paret
@@ -851,6 +860,16 @@ def new_state():
         "completed": False,
         "spawn_chance": 0.0,
     }
+    # Campanya continua: els powerups i els punts de la ronda anterior passen
+    # al següent nivell (la resta del mon — enemics, mapa, terreny — es
+    # reinicia). Si ESTAT_HERETAT es buit (nivell inicial, mort o reinici),
+    # comencem net com sempre.
+    if ESTAT_HERETAT:
+        state["hp"] = ESTAT_HERETAT["hp"]
+        state["wingmans"] = ESTAT_HERETAT["wingmans"]
+        state["missile_level"] = ESTAT_HERETAT["missile_level"]
+        state["score"] = ESTAT_HERETAT["score"]
+    return state
 
 
 # --------------------------------------------------------------------------- #
@@ -2220,8 +2239,12 @@ def run_round():
     Retorna una tupla ``(resultat, punts)`` on resultat es ``"quit"``
     (l'usuari ha sortit), ``"dead"`` (la nau ha quedat sense casc) o
     ``"completed"`` (el mapa s'ha recorregut completament).
+
+    En superar el nivell es desa l'estat del jugador (powerups i punts) a
+    ESTAT_HERETAT perquè el següent nivell de la campanya comenci amb ells;
+    en morir, sortir o saltar el fusible de demo es buida.
     """
-    global _first_frame
+    global _first_frame, ESTAT_HERETAT
     _first_frame = True                        # nova ronda: neteja completa
     state = new_state()
 
@@ -2233,6 +2256,7 @@ def run_round():
         actions = demo_actions(state) if DEMO_MODE else pressed_keys()
 
         if ACTION_QUIT in actions:
+            ESTAT_HERETAT = {}
             return "quit", state["score"]
         if ACTION_PAUSE in actions and not DEMO_MODE:
             if not pause_round(state):
@@ -2260,11 +2284,20 @@ def run_round():
 
         # 3. La nau ha perdut tota la vida? --------------------------------------
         if state["hp"] <= 0:
+            ESTAT_HERETAT = {}          # la mort ho esborra tot: tornes a zero
             return "dead", state["score"]
         if state["completed"]:
             animate_completion(state)
+            # Desarem el que es conserva entre nivells de la campanya.
+            ESTAT_HERETAT = {
+                "hp": state["hp"],
+                "wingmans": state["wingmans"],
+                "missile_level": state["missile_level"],
+                "score": state["score"],
+            }
             return "completed", state["score"]
         if DEMO_MODE and state["ticks"] > DEMO_MAX_TICKS:
+            ESTAT_HERETAT = {}
             return "timeout", state["score"]   # fusible anti-bucle infinit
 
         # 4. Renderitza sense parpalleig i marca el ritme del bucle -------------
@@ -2314,7 +2347,7 @@ def level_from_args(argv):
 
 
 def main() -> None:
-    global CURRENT_MAP, DEMO_MODE
+    global CURRENT_MAP, DEMO_MODE, ESTAT_HERETAT
     DEMO_MODE = "--demo" in sys.argv[1:]
     if DEMO_MODE:
         random.seed(DEMO_SEED)             # reproduibilitat del pilot
@@ -2323,6 +2356,7 @@ def main() -> None:
         # Mode de prova: la campanya comença al nivell demanat i, en
         # superar-lo, continua amb el seguent com sempre.
         CURRENT_MAP = nivell_inicial
+    ESTAT_HERETAT = {}                     # campanya nova: cap powerup herebat
     demo_timeout = False
     try:
         if COLOR_ENABLED and not DEMO_MODE:
@@ -2370,6 +2404,7 @@ def main() -> None:
                 if tecla != KEY_REPLAY:
                     break
                 CURRENT_MAP = 0
+                ESTAT_HERETAT = {}          # reinici des de zero: sense powerups
                 show_intro()
             elif tecla is None or tecla == KEY_QUIT:
                 # Derrota: nomes 'q' (o una consola sense teclat) abandona.

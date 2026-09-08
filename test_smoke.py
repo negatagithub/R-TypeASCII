@@ -615,6 +615,23 @@ st["terrain"].append({"x": col(16), "top": 8, "bot": 0,
 check("demo ducks under a top wall",
       g.demo_actions(st) == {g.ACTION_DOWN})
 
+# --- 14b. els powerups es mantenen entre nivells de la campanya ---------------
+# En passar automaticament d'un nivell a un altre, run_round desa la vida,
+# l'esquadra, els missils i els punts a ESTAT_HERETAT; new_state els torna
+# a aplicar. (La resta del mon — enemics, mapa, terreny — es reinicia.)
+g.ESTAT_HERETAT = {"hp": 63, "wingmans": 2, "missile_level": 3, "score": 450}
+st = g.new_state()
+check("carried hp survives", st["hp"] == 63)
+check("carried wingmans survive", st["wingmans"] == 2)
+check("carried missile level survives", st["missile_level"] == 3)
+check("carried score accumulates", st["score"] == 450)
+check("carried world restarts", st["ticks"] == 0 and st["enemies"] == [])
+g.ESTAT_HERETAT = {}
+st = g.new_state()
+check("cleared carry starts clean",
+      st["hp"] == g.SHIP_MAX_HP and st["wingmans"] == 0
+      and st["missile_level"] == 0 and st["score"] == 0)
+
 # --- 15. records persistents i pausa --------------------------------------------
 import tempfile  # aillat: els tests no han de tocar el records.json real
 import os as _os
