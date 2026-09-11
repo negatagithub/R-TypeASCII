@@ -65,6 +65,14 @@ try:
 except ImportError:  # permet provar la lògica del joc en altres plataformes
     msvcrt = None
 
+# La sortida va directa a stdout: els degradats REXPaint dels nivells nous
+# (8-10) pinten blocs d'ombra Unicode (░▒▓), aixi que cal garantir UTF-8.
+# Amb errors="replace" una consola sense suport mai fa crashar el joc.
+try:
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+except (AttributeError, OSError):
+    pass
+
 # --------------------------------------------------------------------------- #
 # Configuració                                                                #
 # --------------------------------------------------------------------------- #
@@ -141,6 +149,21 @@ POWERUPS = (
     {"name": "missils", "heal": 0, "weight": 1,          # rar com el dron
      "missile": True,
     "sprite": make_sprite(("=>",), (("92", "93"),))},   # mini missil
+    {"name": "vulcan", "heal": 0, "weight": 2,          # arma: abanico
+     "weapon": True, "weapon_type": 0,
+    "sprite": make_sprite(("V",), (("96",),))},
+    {"name": "laser", "heal": 0, "weight": 2,           # arma: rayo vertical
+     "weapon": True, "weapon_type": 1,
+    "sprite": make_sprite(("L",), (("95",),))},
+    {"name": "homing", "heal": 0, "weight": 2,          # arma: buscadores
+     "weapon": True, "weapon_type": 2,
+    "sprite": make_sprite(("*",), (("92",),))},
+    {"name": "plasma", "heal": 0, "weight": 2,          # arma: bola energica
+     "weapon": True, "weapon_type": 3,
+    "sprite": make_sprite(("O",), (("91",),))},
+    {"name": "flame", "heal": 0, "weight": 2,           # arma: ondas de fuego
+     "weapon": True, "weapon_type": 4,
+    "sprite": make_sprite(("~",), (("93",),))},
 )
 POWERUP_DROP_WEIGHTS = tuple(p["weight"] for p in POWERUPS)
 POWERUP_NO_DROP_WEIGHT = 30    # pes de que l'enemic no deixi res
@@ -171,6 +194,17 @@ MISSILE_W = len(MISSILE_SPRITE[0])
 MISSILE_H = len(MISSILE_SPRITE)
 MISSILE_SCORE_BONUS = 50        # punts quan el kit arriba amb el nivell ple
 CODE_MISSILE = "92"             # missils guiats: verd brillant
+
+# --- armes principals del jugador (powerups de canon) ----------------------------
+# Cada powerup d'arma te 7 nivells: recollir el mateix tipus puja el nivell,
+# recollir un tipus diferent canvia d'arma i torna a nivell 1. Al morir es perd.
+MAX_WEAPON_LEVEL = 7
+WEAPON_NAMES = ["VULCAN", "LASER", "HOMING", "PLASMA", "FLAME"]
+WEAPON_COLORS = ["96", "95", "92", "91", "93"]
+# Sprites de projectils per arma.
+VULCAN_SHOT = make_sprite(("-",), (("96",),))   # cian
+HOMING_SHOT = make_sprite(("*",), (("92",),))  # verd: buscadors
+FLAME_SHOT = make_sprite((".",), (("93",),))    # groc: foc
 
 # Tipus d'enemic, de mes petit i feble a mes gran i cuirassat: cada entrada
 # defineix el sprite, quantes vides te (hp), quants punts dona, la velocitat
@@ -209,6 +243,37 @@ ENEMY_TYPES = (
      "hp": 30, "points": 500, "speed": 1, "weight": 0,
      "damage": 45,
      "color": "95"},           # magenta brillant
+
+    # --- enemics del segon acte (nivells 8-10) --------------------------------
+    {"name": "espectre",       # tempesta: cel.lula ràpida i elèctrica
+    "sprite": make_sprite(("(o)",), (("95", "96", "95"),)),
+     "hp": 1, "points": 20, "speed": 3, "weight": 25,
+     "damage": 12,
+     "color": "96"},           # cian brillant
+    {"name": "nuvol",          # tempesta: núvol cuirassat que txeia llamps
+    "sprite": make_sprite((" ~~~ ", " <@> "),
+                      ((None, "90", "90", "90", None),
+                       (None, "93", "96", "93", None))),
+     "hp": 3, "points": 60, "speed": 1, "weight": 20,
+     "damage": 25,
+     "color": "93"},           # groc brillant
+    {"name": "estel de gel",   # glac: fragment afilat que es llança
+    "sprite": make_sprite(("<^>",), (("94", "97", "96"),)),
+     "hp": 1, "points": 15, "speed": 2, "weight": 25,
+     "damage": 12,
+     "color": "96"},           # cian brillant
+    {"name": "serp polar",     # glac: serp llarga, lenta i cuirassada
+    "sprite": make_sprite(("o====<", "~o~~o~"),
+                      (("96", "94", "94", "94", "94", "97"),
+                       ("96", "94", "94", "94", "94", "96"))),
+     "hp": 4, "points": 100, "speed": 1, "weight": 15,
+     "damage": 30,
+     "color": "94"},           # blau brillant
+    {"name": "brao",           # solar: bola de foc que puja
+    "sprite": make_sprite(("(o)",), (("91", "93", "91"),)),
+     "hp": 2, "points": 40, "speed": 2, "weight": 20,
+     "damage": 18,
+     "color": "93"},           # groc brillant
 )
 ENEMY_WEIGHTS = tuple(t["weight"] for t in ENEMY_TYPES)
 
@@ -221,6 +286,11 @@ ENEMY_SHOT_TYPES = (
     {"speed": 2.5, "damage": 18, "color": "95"},
     {"speed": 1.8, "damage": 32, "color": "94"},
     {"speed": 1.6, "damage": 40, "color": "95"},   # rafega pesada del cap
+    {"speed": 3.8, "damage": 10, "color": "96"},   # llamp fi de l'espectre
+    {"speed": 2.2, "damage": 22, "color": "93"},   # descàrrega del núvol
+    {"speed": 3.0, "damage": 12, "color": "96"},   # esquirla de gel
+    {"speed": 1.9, "damage": 28, "color": "94"},   # croxada glacial
+    {"speed": 3.4, "damage": 16, "color": "91"},   # brasa del brao
 )
 
 # --- patrons de moviment -------------------------------------------------------
@@ -236,6 +306,11 @@ KIND_PATTERNS = (
     ("ona", "zigzag", "picat", "puja"),             # cacers: agils
     ("recta", "ona"),                               # creuers: serens
     ("cap",),                                       # el cap final: patró propi
+    ("ona", "zigzag", "picat"),                     # espectres: elèctrics
+    ("recta", "ona"),                               # núvols: macers i serens
+    ("picat", "puja", "ona"),                       # estels de gel: punxeguts
+    ("ona", "recta"),                               # serps polar: ondulants
+    ("puja", "picat", "recta"),                     # braos: foc ascendent
 )
 
 # --- cap final -----------------------------------------------------------------
@@ -594,6 +669,10 @@ PLAYER_HORIZONTAL_SPEED = 3.5  # la nau supera el scroll enemic (2 cel·les/tick
 SHOT_SPEED = 5.0               # els projectils superen la nau, en cel·les/tick
 SHOT_COOLDOWN_TICKS = 2        # ticks d'espera entre dos dispars consecutius
 INITIAL_ENEMIES = 3            # enemics en cua quan comença la ronda
+SPAWN_DENSITY = 1.5            # multiplicador d'enemics: cada spawn dissenyat
+                               # te aquesta probabilitat extra de repetir-se
+                               # (desplaçat verticalment) -> mes enemics i
+                               # mes oportunitats de recollir powerups
 BASE_SPAWN_CHANCE = 0.10       # probabilitat per tick de nou enemic...
 MAX_SPAWN_CHANCE = 0.35        # ...limitada conforme puja la dificultat
 RAMP_PER_MINUTE = 0.05         # creixement de la probabilitat per minut
@@ -705,7 +784,7 @@ def make_enemy(x: float, kind=None) -> dict:
              "kind": kind,
              "hp": t["hp"],
              "pattern": pattern,
-             "fire_cooldown": random.randint(20, 40) - kind * 5}
+             "fire_cooldown": max(9, random.randint(20, 40) - kind * 5)}
     if pattern == "ona":
         # Ondula al voltant d'una altura base que garanteix que l'amplitud
         # hi capiga dins del camp, amb fase aleatoria per dessincronitzar-los.
@@ -767,6 +846,36 @@ def make_missile(state: dict) -> dict:
             "y": state["player_y"] + h_n(PLAYER_H // 2),
             "vx": MISSILE_SPEED / SCREEN_WIDTH,
             "vy": 0.0}
+
+
+def _home_shot(state: dict, shot: dict) -> None:
+    """Reorienta un projectil homing cap a l'enemic mes proper."""
+    sx = shot["x"] + 0.5 / SCREEN_WIDTH
+    sy = shot["y"] + 0.5 / SCREEN_HEIGHT
+    best, best_d2 = None, None
+    for enemy in state["enemies"]:
+        ex, ey, ew, eh = enemy_rect(enemy)
+        ecx = ex + ew / 2
+        ecy = ey + eh / 2
+        d2 = (ecx - sx) ** 2 + (ecy - sy) ** 2
+        if best is None or d2 < best_d2:
+            best, best_d2 = (ecx, ecy), d2
+    if best is None:
+        return
+    dx, dy = best[0] - sx, best[1] - sy
+    dist = math.hypot(dx, dy)
+    if dist <= 0:
+        return
+    strength = 0.08
+    desired_vx = dx / dist * (SHOT_SPEED / SCREEN_WIDTH)
+    desired_vy = dy / dist * (SHOT_SPEED / SCREEN_WIDTH)
+    shot["vx"] = shot["vx"] + (desired_vx - shot["vx"]) * strength
+    shot["vy"] = (shot.get("vy", 0)) + (desired_vy - shot.get("vy", 0)) * strength
+    sp = math.hypot(shot["vx"], shot["vy"])
+    if sp > 0:
+        target = SHOT_SPEED / SCREEN_WIDTH
+        shot["vx"] = shot["vx"] / sp * target
+        shot["vy"] = shot["vy"] / sp * target
 
 
 def _home_missile(state: dict, missile: dict) -> None:
@@ -854,6 +963,8 @@ def new_state():
         "trail": [],                     # historia de centres de la nau
         "shot_cooldown": 0,              # ticks que falten per poder disparar
         "score": 0,
+        "weapon_type": None,              # tipus d'arma actual (0-4 o None)
+        "weapon_level": 0,                # nivell de l'arma (1-7)
         "ticks": 0,
         "map": game_map,
         "map_progress": 0.0,
@@ -869,6 +980,8 @@ def new_state():
         state["wingmans"] = ESTAT_HERETAT["wingmans"]
         state["missile_level"] = ESTAT_HERETAT["missile_level"]
         state["score"] = ESTAT_HERETAT["score"]
+        state["weapon_type"] = ESTAT_HERETAT.get("weapon_type")
+        state["weapon_level"] = ESTAT_HERETAT.get("weapon_level", 0)
     return state
 
 
@@ -999,18 +1112,131 @@ def move_player(state: dict, dx: int = 0, dy: int = 0) -> None:
                                      state["player_y"] + dy * step_y))
 
 
+def _make_shot(x, y, vx=None, vy=None, sprite=None, color=None, damage=1):
+    """Crea un projectil opcionalment amb sprite/velocitat propis."""
+    shot = {"x": x, "y": y}
+    if vx is not None:
+        shot["vx"] = vx
+    if vy is not None:
+        shot["vy"] = vy
+    if sprite is not None:
+        shot["sprite"] = sprite
+    if color is not None:
+        shot["color"] = color
+    shot["damage"] = damage
+    return shot
+
+
+def _shoot_vulcan(state, level):
+    """Dispara un abanico de projectiles horizontales."""
+    base_x = state["player_x"] + s_w_n(PLAYER_SPRITE)
+    base_y = state["player_y"] + h_n(PLAYER_H // 2)
+    # Nivell 1-2: 3 projectils; 3-4: 5; 5-6: 7; 7: 9
+    num = min(3 + (level - 1) // 2 * 2, 9)
+    step = SHOT_SPEED / SCREEN_WIDTH
+    spread = min(level, 5) / SCREEN_HEIGHT
+    for i in range(num):
+        offset = i - (num - 1) / 2.0
+        shot = _make_shot(base_x, base_y + offset * spread,
+                          vx=step, sprite=VULCAN_SHOT, color="96")
+        state["shots"].append(shot)
+
+
+def _shoot_laser(state, level):
+    """Dispara un rayo vertical que creix amb el nivell."""
+    base_x = state["player_x"] + s_w_n(PLAYER_SPRITE)
+    base_y = state["player_y"] + h_n(PLAYER_H // 2)
+    h = min(level + 1, 8)            # altura: 2..8 filas
+    # Crea un sprite vertical 1xH
+    rows = ("|" for _ in range(h))
+    colors = (("95",) for _ in range(h))
+    sprite = make_sprite(tuple(rows), tuple(colors))
+    shot = _make_shot(base_x, base_y - h_n(h // 2),
+                      vx=SHOT_SPEED / SCREEN_WIDTH, sprite=sprite, color="95",
+                      damage=level + 1)
+    state["shots"].append(shot)
+
+
+def _shoot_homing(state, level):
+    """Dispara projectils que busquen l'enemic mes proper."""
+    base_x = state["player_x"] + s_w_n(PLAYER_SPRITE)
+    base_y = state["player_y"] + h_n(PLAYER_H // 2)
+    num = min(1 + (level - 1) // 2, 4)    # 1,1,2,2,3,3,4
+    step = SHOT_SPEED / SCREEN_WIDTH
+    spread = 3.0 / SCREEN_HEIGHT
+    for i in range(num):
+        if num > 1:
+            offset = i - (num - 1) / 2.0
+            sy = base_y + offset * spread
+        else:
+            sy = base_y
+        shot = _make_shot(base_x, sy, vx=step, vy=0.0,
+                          sprite=HOMING_SHOT, color="92")
+        state["shots"].append(shot)
+
+
+def _shoot_plasma(state, level):
+    """Dispara una bola de energia lletja pero potent."""
+    base_x = state["player_x"] + s_w_n(PLAYER_SPRITE)
+    base_y = state["player_y"] + h_n(PLAYER_H // 2)
+    size = min(1 + (level - 1) // 2, 4)      # 1,1,2,2,3,3,4
+    dmg = min(2 + (level - 1) // 2, 6)        # 2,3,3,4,4,5,6
+    rows = ("O" * size for _ in range(size))
+    colors = (("91",) * size for _ in range(size))
+    sprite = make_sprite(tuple(rows), tuple(colors))
+    shot = _make_shot(base_x, base_y - h_n(size / 2.0),
+                      vx=SHOT_SPEED / SCREEN_WIDTH * 0.7,
+                      sprite=sprite, color="91", damage=dmg)
+    state["shots"].append(shot)
+
+
+def _shoot_flame(state, level):
+    """Dispara projectils que oscil·len verticalment (ones de foc)."""
+    base_x = state["player_x"] + s_w_n(PLAYER_SPRITE)
+    base_y = state["player_y"] + h_n(PLAYER_H // 2)
+    num = min(1 + (level - 1) // 2, 4)
+    amp = min(1.0 + (level - 1) * 0.5, 4.0) / SCREEN_HEIGHT
+    spread = 3.0 / SCREEN_HEIGHT
+    for i in range(num):
+        if num > 1:
+            offset = i - (num - 1) / 2.0
+            sy = base_y + offset * spread
+        else:
+            sy = base_y
+        shot = _make_shot(base_x, sy,
+                          vx=SHOT_SPEED / SCREEN_WIDTH * 0.85,
+                          sprite=FLAME_SHOT, color="93")
+        shot["base_y"] = sy
+        shot["amp"] = amp
+        shot["phase"] = i * 1.57  # desfase entre projectils
+        state["shots"].append(shot)
+
+
 def shoot(state: dict) -> None:
-    """Dispara un projectil des del morro de la nau, si el cano es carregat."""
+    """Dispara projectils des del morro de la nau, si el cano es carregat."""
     if state["shot_cooldown"] > 0:
         return                                  # encara recarregant
-    # Neix just davant del morro, a l'altura de la fila central del sprite.
-    state["shots"].append({"x": state["player_x"] + s_w_n(PLAYER_SPRITE),
-                           "y": state["player_y"] + h_n(PLAYER_H // 2)})
-    # Cada dron aliat afegeix el seu propi projectil, des de la seva posicio.
+    wtype = state.get("weapon_type")
+    level = state.get("weapon_level", 0)
+    if wtype == 0:
+        _shoot_vulcan(state, level)
+    elif wtype == 1:
+        _shoot_laser(state, level)
+    elif wtype == 2:
+        _shoot_homing(state, level)
+    elif wtype == 3:
+        _shoot_plasma(state, level)
+    elif wtype == 4:
+        _shoot_flame(state, level)
+    else:
+        # Dispar per defecte (sense arma)
+        state["shots"].append(_make_shot(
+            state["player_x"] + s_w_n(PLAYER_SPRITE),
+            state["player_y"] + h_n(PLAYER_H // 2)))
+    # Cada dron aliat afegeix el seu propi projectil (sempre basic).
     for i in range(state.get("wingmans", 0)):
         wx, wy = wingman_position(state, i)
-        state["shots"].append({"x": wx + s_w_n(WINGMAN_SPRITE),
-                               "y": wy})
+        state["shots"].append(_make_shot(wx + s_w_n(WINGMAN_SPRITE), wy))
     state["shot_cooldown"] = SHOT_COOLDOWN_TICKS
 
 
@@ -1261,6 +1487,29 @@ def update_world(state: dict) -> None:
                 enemy["amp"] = 0.08
                 enemy["phase"] = 0.0
             state["enemies"].append(enemy)
+            # Densitat d'enemics (SPAWN_DENSITY > 1): probabilitat extra de
+            # repetir el spawn, desplaçat verticalment per no solapar-se.
+            # El cap (boss) mai es duplica. Es fa servir la MATEIXA fila
+            # base desplaçada l'altura del sprite + 1 cela, clampada al camp:
+            # aixi l'extra respecta la fila dissenyada i no neix a l'atzar.
+            if kind != BOSS_KIND and random.random() < SPAWN_DENSITY - 1.0:
+                h = s_h_n(ENEMY_TYPES[kind]["sprite"])
+                extra = make_enemy(1.0, kind)
+                y_off = h + 1.0 / SCREEN_HEIGHT
+                ny = start_y + y_off if start_y <= 0.5 else start_y - y_off
+                extra["y"] = max(0.0, min(1.0 - h, ny))
+                extra["pattern"] = pattern
+                if pattern == "ona":
+                    extra["amp"] = 0.02
+                    extra["phase"] = math.pi      # fase oposada: no s'apilen
+                    extra["base_y"] = extra["y"]
+                elif pattern == "zigzag":
+                    extra["vy"] = -1              # zigzag oposat
+                elif pattern == "cap":
+                    extra["base_y"] = extra["y"]
+                    extra["amp"] = 0.08
+                    extra["phase"] = math.pi
+                state["enemies"].append(extra)
     # --- terreny: cada columna de paret entra per la dreta el seu tick -------
     # Els esdeveniments ja venen aplanats i ordenats des del fitxer de nivell.
     for ev_tick, top, bot, edge, fill in game_map.get("terrain_events", ()):
@@ -1317,11 +1566,29 @@ def update_world(state: dict) -> None:
         if e["x"] + s_w_n(ENEMY_TYPES[e["kind"]]["sprite"]) > 0.0
     ]
 
-    # --- projectils: cap a la dreta; fora de pantalla, fora -------------------
+    # --- projectils: moure segons vx/vy propis o per defecte ------------------
     for shot in state["shots"]:
         shot["prev_x"] = shot["x"]
-        shot["x"] += SHOT_SPEED / SCREEN_WIDTH
-    state["shots"] = [s for s in state["shots"] if s["x"] < 1.0]
+        shot["prev_y"] = shot["y"]
+        if "vx" in shot:
+            # Projectil amb velocitat propia (homing, flame, plasma, vulcan)
+            shot["x"] += shot["vx"]
+            if "vy" in shot:
+                shot["y"] += shot["vy"]
+            # Homing: reorientar cap a l'enemic mes proper
+            if shot.get("sprite") == HOMING_SHOT:
+                _home_shot(state, shot)
+            # Flame: oscil·lar verticalment
+            if shot.get("sprite") == FLAME_SHOT:
+                shot["_age"] = shot.get("_age", 0) + 1
+                amp = shot.get("amp", 0.02)
+                base = shot.get("base_y", shot["y"])
+                phase = shot.get("phase", 0)
+                shot["y"] = base + math.sin(shot["_age"] * 0.4 + phase) * amp
+        else:
+            shot["x"] += SHOT_SPEED / SCREEN_WIDTH
+    # Fora de pantalla (dreta o esquerda per homing)
+    state["shots"] = [s for s in state["shots"] if s["x"] < 1.0 and s["x"] > -0.05]
 
     # --- enemics disparen projectils amb angle variable cap al jugador -------
     player_center_x = state["player_x"] + s_w_n(PLAYER_SPRITE) / 2
@@ -1332,7 +1599,8 @@ def update_world(state: dict) -> None:
             shot = make_enemy_shot(enemy, player_center_x, player_center_y)
             if shot is not None:
                 state["enemy_shots"].append(shot)
-            enemy["fire_cooldown"] = random.randint(18, 36) - enemy["kind"] * 5
+            enemy["fire_cooldown"] = max(
+                9, random.randint(18, 36) - enemy["kind"] * 5)
 
     # --- projectils enemics amb trajectoria angular ---------------------------
     remaining_enemy_shots = []
@@ -1393,6 +1661,15 @@ def update_world(state: dict) -> None:
                     state["missile_level"] += 1
                 else:
                     state["score"] += MISSILE_SCORE_BONUS
+            elif p.get("weapon"):
+                # Arma principal: si es del mateix tipus, puja nivell;
+                # si es diferent, canvia d'arma i torna a nivell 1.
+                if state.get("weapon_type") == p["weapon_type"]:
+                    state["weapon_level"] = min(MAX_WEAPON_LEVEL,
+                                                state.get("weapon_level", 0) + 1)
+                else:
+                    state["weapon_type"] = p["weapon_type"]
+                    state["weapon_level"] = 1
             else:
                 state["hp"] = min(SHIP_MAX_HP, state["hp"] + p["heal"])
             continue                            # recollit
@@ -1403,13 +1680,16 @@ def update_world(state: dict) -> None:
     # Solapament de rectangles despres de moure; a mes, detectem creuaments
     # dins del mateix tick (el projectil passa de ser darrere l'enemic a ser
     # davant) per evitat que els mes petits s'escapin sense rebre l'impacte.
-    shot_w = s_w_n(SHOT_SPRITE)
+    shot_w = s_w_n(SHOT_SPRITE)  # default, es sobreescriu per cada projectil
     shot_h = s_h_n(SHOT_SPRITE)
     dead_shots, dead_enemies = set(), set()
     for i, shot in enumerate(state["shots"]):
         if i in dead_shots:
             continue
         sx, sy = shot["x"], shot["y"]
+        # Usa la mida real del sprite del projectil
+        shot_w = s_w_n(shot.get("sprite", SHOT_SPRITE))
+        shot_h = s_h_n(shot.get("sprite", SHOT_SPRITE))
         # La roca atura els projectils: espurna a la vora i fora. A mes del
         # solapament es detecta el creuament dins del mateix tick (el tiri es
         # mes rapid que l'amplada d'una columna de paret).
@@ -1442,7 +1722,7 @@ def update_world(state: dict) -> None:
                 state["effects"].append(
                     make_effect(sx, sy, SPARK_FRAMES))
                 dead_shots.add(i)
-                enemy["hp"] -= 1                # els grans aguanten mes d'un toc
+                enemy["hp"] -= shot.get("damage", 1)  # depenent del tipus de projectil
                 if enemy["hp"] <= 0:
                     dead_enemies.add(j)
                     _destroy_enemy(state, enemy, ex, ey, ew, eh)
@@ -1476,7 +1756,7 @@ def update_world(state: dict) -> None:
                            mx, my, mist_w, miss_h, [(ex, ey, ew, eh)]):
                 state["effects"].append(make_effect(mx, my, SPARK_FRAMES))
                 dead_missiles.add(i)
-                enemy["hp"] -= 1                # els grans aguanten mes d'un toc
+                enemy["hp"] -= missile.get("damage", 1)  # els missils fan 1 dany
                 if enemy["hp"] <= 0:
                     dead_enemies.add(j)
                     _destroy_enemy(state, enemy, ex, ey, ew, eh)
@@ -1622,8 +1902,10 @@ def draw_enemy(enemy: dict) -> None:
 
 
 def draw_shot(shot: dict) -> None:
-    """Dibuixa un projectil a les coordenades indicades."""
-    draw_sprite(SHOT_SPRITE, shot["x"], shot["y"], CODE_SHOT)
+    """Dibuixa un projectil amb el seu sprite i color propis (si en te)."""
+    sprite = shot.get("sprite", SHOT_SPRITE)
+    color = shot.get("color", CODE_SHOT)
+    draw_sprite(sprite, shot["x"], shot["y"], color)
 
 
 def draw_missile(missile: dict) -> None:
@@ -1786,6 +2068,12 @@ def render(state: dict) -> str:
     missile_level = state.get("missile_level", 0)
     if missile_level:
         status += paint(f"   MISSL {missile_level}/{MAX_MISSILES}", "92")
+    # Tipus i nivell d'arma principal (si en te)
+    wtype = state.get("weapon_type")
+    if wtype is not None:
+        wlevel = state.get("weapon_level", 0)
+        status += paint(f"   {WEAPON_NAMES[wtype]} {wlevel}/{MAX_WEAPON_LEVEL}",
+                        WEAPON_COLORS[wtype])
     # Barra de vida del cap final (si encomana): nomes es mostra mentre el cap
     # es viu, despres de la barra de mapa. El magenta combina amb el seu
     # sprite multicolor.
@@ -2294,6 +2582,8 @@ def run_round():
                 "wingmans": state["wingmans"],
                 "missile_level": state["missile_level"],
                 "score": state["score"],
+                "weapon_type": state.get("weapon_type"),
+                "weapon_level": state.get("weapon_level", 0),
             }
             return "completed", state["score"]
         if DEMO_MODE and state["ticks"] > DEMO_MAX_TICKS:

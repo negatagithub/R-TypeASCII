@@ -108,6 +108,16 @@ complet del joc al terminal o a la CI.
   7 nivells, que son els missils maxims que poden planejar a l'escena
   alhora); amb el nivell ple, el kit es converteix en +50 punts. El HUD
   mostra `MISSL n/7` un cop reculls el primer.
+- **Armes principals** — 5 tipus d'arma, cadascun amb 7 nivells de poder.
+  Recolleix el mateix tipus per pujar de nivell; recollir-ne un de diferent
+  canvia d'arma i torna a nivell 1. Al morir es perd. El HUD mostra
+  `TIPUS n/7` amb el color de l'arma. Tipus:
+  - **VULCAN** (V, cian) — abanico de projectils horizontals (fins a 9).
+  - **LASER** (L, magenta) — rayo vertical alt (fins a 8 files).
+  - **HOMING** (*, verd) — projectils que cacen enemics (fins a 4).
+  - **PLASMA** (O, vermell) — bola energica lenta pero molt potente.
+  - **FLAME** (~, groc) — ondas de foc sinusoidals.
+
 - **Efectes d'impacte** — cada toc genera una espurna groga (`*` `+` `.`)
   on aterra el projectil; en abatre un enemic, aquest explota al centre
   amb una animacio mes gran com mes gran sigui (drons: espurna; cacers

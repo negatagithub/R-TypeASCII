@@ -421,11 +421,11 @@ g.COLOR_ENABLED = False
 
 # --- 12. powerups: kits de reparacio i dron aliat ------------------------------
 check("starts without powerups", orig_new_state()["powerups"] == [])
-check("drop weights incl. rares (dron + missils)",
-      g.POWERUP_DROP_WEIGHTS == (7, 3, 2, 1, 1))
+check("drop weights incl. rares (dron + missils + armes)",
+      g.POWERUP_DROP_WEIGHTS == (7, 3, 2, 1, 1, 2, 2, 2, 2, 2))
 random.seed(5)
 check("drops always valid",
-      all(g.roll_powerup_drop() in (None, 0, 1, 2, 3, 4) for _ in range(200)))
+      all(g.roll_powerup_drop() in (None, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9) for _ in range(200)))
 sp_sprite = g.POWERUPS[0]["sprite"]
 bg = g.POWERUPS[2]["sprite"]
 k_small = g.make_powerup(0.5, 0.5, 0)
@@ -631,6 +631,94 @@ st = g.new_state()
 check("cleared carry starts clean",
       st["hp"] == g.SHIP_MAX_HP and st["wingmans"] == 0
       and st["missile_level"] == 0 and st["score"] == 0)
+
+# --- 14c. armes principals (powerups de canon) ----------------------------------
+# 5 tipus d'arma, 7 nivells cada un. Recollir el mateix tipus puja nivell,
+# recollir un altre tipus canvia d'arma. Al morir es perd.
+check("starts without weapon", g.new_state()["weapon_type"] is None)
+check("starts at weapon level 0", g.new_state()["weapon_level"] == 0)
+
+# Agafar powerup d'arma per primera vegada: estableceix tipus i nivell 1
+st = g.new_state()
+st["powerups"].append(g.make_powerup(st["player_x"] + 4 / 60,
+                                     st["player_y"] + 1 / 18, 5))  # vulcan
+g.update_world(st)
+check("first weapon pickup sets type", st["weapon_type"] == 0)
+check("first weapon pickup sets level 1", st["weapon_level"] == 1)
+
+# Agafar el mateix tipus: puja nivell
+st["powerups"].append(g.make_powerup(st["player_x"] + 4 / 60,
+                                     st["player_y"] + 1 / 18, 5))  # vulcan
+g.update_world(st)
+check("same weapon type levels up", st["weapon_level"] == 2)
+
+# Agafar tipus diferent: canvia d'arma, torna a nivell 1
+st["powerups"].append(g.make_powerup(st["player_x"] + 4 / 60,
+                                     st["player_y"] + 1 / 18, 6))  # laser
+g.update_world(st)
+check("different weapon changes type", st["weapon_type"] == 1)
+check("different weapon resets to level 1", st["weapon_level"] == 1)
+
+# Nivell maxim: no puja mes enlloc de 7
+st = g.new_state()
+st["weapon_type"] = 0
+st["weapon_level"] = 7
+st["powerups"].append(g.make_powerup(st["player_x"] + 4 / 60,
+                                     st["player_y"] + 1 / 18, 5))  # vulcan
+g.update_world(st)
+check("max level stays at 7", st["weapon_level"] == 7)
+
+# Disparar amb vulcan: multiple projectils en abanico
+st = g.new_state()
+st["weapon_type"] = 0
+st["weapon_level"] = 3
+st["shot_cooldown"] = 0
+g.shoot(st)
+check("vulcan fires multiple shots", len(st["shots"]) >= 3)
+
+# Disparar amb laser: projectil unic pero gran
+st = g.new_state()
+st["weapon_type"] = 1
+st["weapon_level"] = 5
+st["shot_cooldown"] = 0
+g.shoot(st)
+check("laser fires single shot", len(st["shots"]) == 1)
+laser_sprite = st["shots"][0].get("sprite")
+check("laser shot is tall", len(laser_sprite) >= 5)
+
+# Disparar amb homing: projectils amb velocitat propia
+st = g.new_state()
+st["weapon_type"] = 2
+st["weapon_level"] = 4
+st["shot_cooldown"] = 0
+g.shoot(st)
+check("homing fires shots", len(st["shots"]) >= 1)
+check("homing shot has vx", "vx" in st["shots"][0])
+
+# Disparar amb plasma: projectil amb mes dany
+st = g.new_state()
+st["weapon_type"] = 3
+st["weapon_level"] = 5
+st["shot_cooldown"] = 0
+g.shoot(st)
+check("plasma fires shot", len(st["shots"]) == 1)
+check("plasma does extra damage", st["shots"][0].get("damage", 1) >= 3)
+
+# Disparar amb flame: projectils amb oscil.lacio
+st = g.new_state()
+st["weapon_type"] = 4
+st["weapon_level"] = 3
+st["shot_cooldown"] = 0
+g.shoot(st)
+check("flame fires shots", len(st["shots"]) >= 1)
+
+# Arma es conserva entre nivells (via ESTAT_HERETAT)
+g.ESTAT_HERETAT = {"hp": 80, "wingmans": 1, "missile_level": 2,
+                   "score": 500, "weapon_type": 3, "weapon_level": 4}
+st = g.new_state()
+check("weapon type carries over", st["weapon_type"] == 3)
+check("weapon level carries over", st["weapon_level"] == 4)
+g.ESTAT_HERETAT = {}
 
 # --- 15. records persistents i pausa --------------------------------------------
 import tempfile  # aillat: els tests no han de tocar el records.json real

@@ -8,8 +8,8 @@ import main
 main.COLOR_ENABLED = False
 import main
 
-# 1. Els nivells venen dels fitxers numerats, en ordre (7 d'art)
-assert len(main.MAPS) == 7
+# 1. Els nivells venen dels fitxers numerats, en ordre (10 d'art)
+assert len(main.MAPS) == 10
 m = main.MAPS[0]
 assert m["name"] == "NIVELL 1 - PRIMER CONTACTE"
 assert len(m["spawns"]) == 59, len(m["spawns"])
@@ -34,6 +34,22 @@ assert main.MAPS[5]["art_columns"] and main.MAPS[5]["fons_columns"]
 assert main.MAPS[6]["name"] == "NIVELL 7 - EL FUEGO DEL INFERNO"
 assert any(s[1] == main.BOSS_KIND for s in main.MAPS[6]["spawns"])
 assert main.MAPS[6]["art_columns"] and main.MAPS[6]["fons_columns"]
+
+# Segon acte: nivells 8-10 (tempesta, gel i sol) amb els 5 enemics nous.
+assert main.MAPS[7]["name"] == "NIVELL 8 - TEMPORAL"
+assert main.MAPS[7]["art_columns"] and main.MAPS[7]["fons_columns"]
+assert any(s[1] == 4 for s in main.MAPS[7]["spawns"])      # espectre
+assert any(s[1] == 5 for s in main.MAPS[7]["spawns"])      # nuvol
+assert main.MAPS[8]["name"] == "NIVELL 9 - ABISS GLACIAL"
+assert main.MAPS[8]["art_columns"] and main.MAPS[8]["fons_columns"]
+assert any(s[1] == 6 for s in main.MAPS[8]["spawns"])      # estel de gel
+assert any(s[1] == 7 for s in main.MAPS[8]["spawns"])      # serp polar
+assert main.MAPS[9]["name"] == "NIVELL 10 - CORONA SOLAR"
+assert main.MAPS[9]["art_columns"] and main.MAPS[9]["fons_columns"]
+assert any(s[1] == 8 for s in main.MAPS[9]["spawns"])      # brao
+assert any(s[1] == main.BOSS_KIND for s in main.MAPS[9]["spawns"])
+boss10 = next(s for s in main.MAPS[9]["spawns"] if s[1] == main.BOSS_KIND)
+assert main.MAPS[9]["art_columns"][boss10[0]][9] is None, "el cap neix en cel net"
 
 # 2. fit_corridor garanteix el corredor minim
 t, b = main.fit_corridor(50, 50)
@@ -106,7 +122,7 @@ assert st4["map_progress"] == 1.0
 assert not st4["terrain"] or all(c["x"] < 1.0 for c in st4["terrain"])
 
 # 9. garanties de disseny de TOTS els nivells: dins de durada i passables
-assert len(main.MAPS) == 7, len(main.MAPS)
+assert len(main.MAPS) == 10, len(main.MAPS)
 assert len(main.MAPS[0]["spawns"]) == 59
 assert len(main.MAPS[1]["spawns"]) == 84
 for idx, mapa in enumerate(main.MAPS, start=1):
@@ -188,9 +204,11 @@ main.msvcrt = _orig_msvcrt
 assert main.level_from_args(["main.py"]) is None          # sense argument
 assert main.level_from_args(["main.py", "1"]) == 0
 assert main.level_from_args(["main.py", "2"]) == 1
+assert main.level_from_args(["main.py", "8"]) == 7        # segon acte
+assert main.level_from_args(["main.py", "10"]) == 9       # l'ultim nivell
 try:
-    main.level_from_args(["main.py", "9"])                # fora de rang
-    raise AssertionError("hauria d'haver fallat amb nivell 9")
+    main.level_from_args(["main.py", "11"])               # fora de rang
+    raise AssertionError("hauria d'haver fallat amb nivell 11")
 except SystemExit as exc:
     assert exc.code == 1
 try:
