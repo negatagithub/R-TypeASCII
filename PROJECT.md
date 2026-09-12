@@ -19,6 +19,8 @@ de canvis.
 | `nivell_4.py` | Nivell 4 «GALERIES D'AUTOR» (referència del format d'art) |
 | `nivell_5.py` | Nivell 5 «BASTIÓ URBÀ» (final de campanya, art de ciutat) |
 | `nivell_<n>.py` | Nous nivells; el carregador els descobreix i ordena pel número |
+| `musica.py` | Música de fons procedural: `PARTITURA` (12 peces en bucle) |
+| `so.py` | Efectes de so procedurals (síntesi, sense arxius) |
 | `README.md` | Documentació d'usuari |
 | `PROJECT.md` | Aquest document |
 | `PROJECT_SUMMARY.md` | Resum de disseny original (històric) |
@@ -265,6 +267,29 @@ final amb cristall).
 - `test_smoke.py`: suite de les primeres iteracions. El seu harness tenia
   un bug (no restaurava la base 60x18) ja corregit; queden 17 FALLs per
   drift amb la mecànica actual, documentats i pendents de modernitzar.
+
+### 3.7 Música procedural (`musica.py`)
+
+- Model de dades: `PARTITURA = {nom: {bpm, lead, bass, drums}}`; cada veu
+  és una llista de compassos i cada compàs una llista de `(figura, altura)`
+  (durada en negres + nota MIDI o `None` = silenci). Notació compacta
+  `seq("72:0.5 74:0.5 R:1")`; cada compàs suma 4 negres.
+- 12 peces: `intro` (fanfàrria 112 bpm) + `nivell_1..11` (90-150 bpm, cada
+  nivell el seu caràcter: marxa, fàbrica, tensió, misteri, groove, synthwave,
+  riff, tempesta, vals, pols solar, tambors de jungla).
+- Síntesi: `sintetitzar()` mescla les 3 veus en un sol bucle (lead quadrat
+  + baix sinusoïdal + percussió bombo/caixa/plat) amb memòria cau
+  (`_CACHE`); `sona()` el reprodueix en bucle en un thread daemon via
+  `winsound.PlaySound(SND_MEMORY)` (sincrònic per limitació de l'API, com
+  els SFX), `atura()` el para, `actual()` diu què sona.
+- Integració (`main.py`): `musica_nivell()` = `f"nivell_{CURRENT_MAP+1}"`;
+  `run_round()` engega la peça en començar i l'atura en morir/completar/sortir;
+  `show_intro()`, `show_game_over()` i `show_campaign_complete()` posen
+  `intro` en bucle. `musica_sona()` és no-op en demo/tests/sense mòdul;
+  `R_TYPE_SO=0` ho silencia tot.
+- Bloc 23 de `_test_terreny.py`: 12 peces presents, compassos de 4 negres,
+  bucles > 1 s no silenciosos amb cau, `sona()` segur sense maquinari i
+  correspondència nivell↔peça.
 
 ## 6. Limitacions conegudes
 - Els enemics sobrevolen la roca: no hi ha col·lisió enemic-paret (només

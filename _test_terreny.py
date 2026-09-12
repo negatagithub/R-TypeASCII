@@ -9,8 +9,8 @@ main.COLOR_ENABLED = False
 import main
 main.so.set_enabled(False)  # so desactivat en tests
 
-# 1. Els nivells venen dels fitxers numerats, en ordre (10 d'art)
-assert len(main.MAPS) == 10
+# 1. Els nivells venen dels fitxers numerats, en ordre (11 d'art)
+assert len(main.MAPS) == 11
 m = main.MAPS[0]
 assert m["name"] == "NIVELL 1 - PRIMER CONTACTE"
 assert len(m["spawns"]) == 59, len(m["spawns"])
@@ -51,6 +51,11 @@ assert any(s[1] == 8 for s in main.MAPS[9]["spawns"])      # brao
 assert any(s[1] == main.BOSS_KIND for s in main.MAPS[9]["spawns"])
 boss10 = next(s for s in main.MAPS[9]["spawns"] if s[1] == main.BOSS_KIND)
 assert main.MAPS[9]["art_columns"][boss10[0]][9] is None, "el cap neix en cel net"
+assert main.MAPS[10]["name"] == "NIVELL 11 - LA JUNGLA VIVA"
+assert main.MAPS[10]["art_columns"] and main.MAPS[10]["fons_columns"]
+assert any(s[1] == main.BOSS_KIND for s in main.MAPS[10]["spawns"])
+boss11 = next(s for s in main.MAPS[10]["spawns"] if s[1] == main.BOSS_KIND)
+assert main.MAPS[10]["art_columns"][boss11[0]][9] is None, "el devorador neix en cel net"
 
 # 2. fit_corridor garanteix el corredor minim
 t, b = main.fit_corridor(50, 50)
@@ -123,7 +128,7 @@ assert st4["map_progress"] == 1.0
 assert not st4["terrain"] or all(c["x"] < 1.0 for c in st4["terrain"])
 
 # 9. garanties de disseny de TOTS els nivells: dins de durada i passables
-assert len(main.MAPS) == 10, len(main.MAPS)
+assert len(main.MAPS) == 11, len(main.MAPS)
 assert len(main.MAPS[0]["spawns"]) == 59
 assert len(main.MAPS[1]["spawns"]) == 84
 for idx, mapa in enumerate(main.MAPS, start=1):
@@ -206,10 +211,11 @@ assert main.level_from_args(["main.py"]) is None          # sense argument
 assert main.level_from_args(["main.py", "1"]) == 0
 assert main.level_from_args(["main.py", "2"]) == 1
 assert main.level_from_args(["main.py", "8"]) == 7        # segon acte
-assert main.level_from_args(["main.py", "10"]) == 9       # l'ultim nivell
+assert main.level_from_args(["main.py", "10"]) == 9
+assert main.level_from_args(["main.py", "11"]) == 10      # la jungla viva
 try:
-    main.level_from_args(["main.py", "11"])               # fora de rang
-    raise AssertionError("hauria d'haver fallat amb nivell 11")
+    main.level_from_args(["main.py", "12"])               # fora de rang
+    raise AssertionError("hauria d'haver fallat amb nivell 12")
 except SystemExit as exc:
     assert exc.code == 1
 try:
@@ -462,5 +468,37 @@ for i in range(m5["duration"]):
 assert st22["completed"] and st22["map_progress"] == 1.0
 assert not st22["terrain"], "el dibuix sencer hauria d'haver creuat"
 main.CURRENT_MAP = 0
+
+# 23. musica procedural: partitura completa i motor sense maquinari
+import musica as _mus
+assert set(_mus.PARTITURA) == {"intro"} | {f"nivell_{n}" for n in range(1, 12)}, \
+    sorted(_mus.PARTITURA)
+for nom, peca in _mus.PARTITURA.items():
+    assert peca["bpm"] > 0, nom
+    for veu in ("lead", "bass", "drums"):
+        for compas in peca.get(veu, []):
+            assert compas and abs(sum(f for f, _ in compas) - 4.0) < 1e-9, \
+                f"{nom}/{veu}: el compas ha de sumar 4 negres: {compas}"
+            for figura, altura in compas:
+                assert figura > 0, (nom, veu, compas)
+                assert altura is None or 0 <= altura <= 127, (nom, veu, compas)
+    buf = _mus.sintetitzar(peca)          # sintetitza el bucle sencer
+    assert len(buf) > _mus.RATE, nom       # > 1 segon de so real
+    assert max(abs(v) for v in buf) > 1000, nom  # no es silenci
+    assert _mus.sintetitzar(peca) is buf, f"{nom}: la cache ha de retornar el mateix"
+assert _mus.actual() is None               # sense maquinari no sona res
+_mus.sona("intro")                         # amb so desactivat: no-op segur
+assert _mus.actual() is None
+_mus.sona("no-existeix")
+assert _mus.actual() is None
+_mus.atura()
+# Cada nivell té la seva peça i el motor la demana pel número
+for idx in range(len(main.MAPS)):
+    main.CURRENT_MAP = idx
+    assert main.musica_nivell() == f"nivell_{idx + 1}"
+    assert main.musica_nivell() in _mus.PARTITURA
+main.CURRENT_MAP = 0
+main.musica_sona("nivell_1")               # demo/tests: no-op segur
+main.musica_atura()
 
 print("TOT BE: tots els blocs de proves superats")

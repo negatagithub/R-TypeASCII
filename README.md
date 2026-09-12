@@ -186,6 +186,15 @@ complet del joc al terminal o a la CI.
 - **Final de nivell** — en completar el mapa apareix un banner gran de
   `NIVELL COMPLETAT` centrat a la pantalla i la nau surt volant cap a la dreta
   fins desaparèixer. Després s'espera 6 segons abans de tornar al menú.
+- **Música procedural** — cada pantalla té la seva peça en bucle
+  (`musica.py`, sense arxius): fanfàrria `intro` a la presentació, derrota i
+  victòria total, i una peça pròpia per nivell (`nivell_1` marxa heroica,
+  `nivell_2` fàbrica militant, `nivell_3` tensió del cap, `nivell_4` misteri
+  de cova, `nivell_5` groove urbà, `nivell_6` synthwave de neó, `nivell_7`
+  riff infernal, `nivell_8` tempesta elèctrica, `nivell_9` vals glacial,
+  `nivell_10` pols solar, `nivell_11` tambors de jungla). Bucle polifònic de
+  3 veus (melodia + baix + percussió) generat un sol cop i guardat en cau;
+  `R_TYPE_SO=0` ho silencia tot i en `--demo` no sona res.
 
 ## Afinament
 
@@ -226,6 +235,8 @@ R-TypeASCII/
 │   ├── parets.txt        #   primer pla SOLID (l'única capa que col·lisiona)
 │   └── fons_*.txt / parallax_*.txt   # capes decoratives amb parallax
 ├── eines_art.py          # Eina: valida i previsualitza l'art d'un nivell
+ ├── musica.py             # Musica de fons: 12 partitures procedurals en bucle
+ ├── so.py                 # Efectes de so procedurals (sintesi, sense arxius)
 ├── README.md             # Documentació d'usuari (aquest fitxer)
 ├── PROJECT.md            # Documentació tècnica del projecte
 ├── PROJECT_SUMMARY.md    # Resum de disseny original (històric)

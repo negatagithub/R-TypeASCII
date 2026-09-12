@@ -66,6 +66,11 @@ except ImportError:       # entorns sense so (CI, plataformes exotiques)
     so = None
 
 try:
+    import musica  # musica de fons procedural (partitures, sense arxius)
+except ImportError:
+    musica = None
+
+try:
     import msvcrt  # només Windows: lectura de teclat sense bloquejar
 except ImportError:  # permet provar la lògica del joc en altres plataformes
     msvcrt = None
@@ -1312,6 +1317,27 @@ def _so(fn) -> None:
         fn()
 
 
+def musica_nivell() -> str:
+    """Nom de la peca que toca al nivell actual ('nivell_<n>')."""
+    return f"nivell_{CURRENT_MAP + 1}"
+
+
+def musica_sona(nom: str) -> None:
+    """Engega la musica `nom` si el modul `musica` esta disponible.
+
+    Mai trenca el joc (modul absent, so desactivat, demo): igual que `_so`
+    pero per a la musica de fons en bucle.
+    """
+    if musica is not None and not DEMO_MODE:
+        musica.sona(nom)
+
+
+def musica_atura() -> None:
+    """Atura la musica de fons (si n'hi ha). Mai falla."""
+    if musica is not None:
+        musica.atura()
+
+
 def shoot(state: dict) -> None:
     """Dispara projectils des del morro de la nau, si el cano es carregat."""
     if state["shot_cooldown"] > 0:
@@ -2358,7 +2384,9 @@ def show_intro() -> None:
                 CODE_HINT))
     print()
     print("   Premeu qualsevol tecla per comencar...")
+    musica_sona("intro")  # fanfarria de la introduccio, en bucle
     wait_key()
+    musica_atura()  # el nivell posara la seva propia musica en comencar
 
 
 def show_game_over(score: int, completed: bool = False,
@@ -2376,6 +2404,7 @@ def show_game_over(score: int, completed: bool = False,
         print(paint(line, CODE_HUD))
     print(paint(f" Prem qualsevol tecla per repetir el nivell, o "
                 f"'{KEY_QUIT}' per sortir.", CODE_HINT))
+    musica_sona("intro")  # la derrota torna a la fanfarria, en bucle
 
 
 def show_campaign_complete(score: int, record: bool = False) -> None:
@@ -2390,6 +2419,7 @@ def show_campaign_complete(score: int, record: bool = False) -> None:
         print(paint(line, CODE_HUD))
     print(paint(f" Prem '{KEY_REPLAY}' per repetir la campanya des del "
                 f"principi, o qualsevol altra tecla per sortir.", CODE_HINT))
+    musica_sona("intro")  # victoria total: fanfarria en bucle
 
 
 # --------------------------------------------------------------------------- #
@@ -2684,6 +2714,7 @@ def run_round():
     global _first_frame, ESTAT_HERETAT
     _first_frame = True                        # nova ronda: neteja completa
     state = new_state()
+    musica_sona(musica_nivell())  # cada nivell, la seva musica en bucle
 
     while True:
         # 1. Llegeix l'ESTAT del teclat: totes les tecles premudes ara mateix.
@@ -2694,9 +2725,11 @@ def run_round():
 
         if ACTION_QUIT in actions:
             ESTAT_HERETAT = {}
+            musica_atura()
             return "quit", state["score"]
         if ACTION_PAUSE in actions and not DEMO_MODE:
             if not pause_round(state):
+                musica_atura()
                 return "quit", state["score"]
             _first_frame = True          # repinta sencera: esborra el texte de pausa
 
@@ -2722,9 +2755,11 @@ def run_round():
         # 3. La nau ha perdut tota la vida? --------------------------------------
         if state["hp"] <= 0:
             ESTAT_HERETAT = {}          # la mort ho esborra tot: tornes a zero
+            musica_atura()
             _so(so.gameover)  # fi de partida
             return "dead", state["score"]
         if state["completed"]:
+            musica_atura()
             _so(so.victoria)  # nivell superat
             animate_completion(state)
             # Desarem el que es conserva entre nivells de la campanya.
@@ -2854,8 +2889,10 @@ def main() -> None:
                 break
             # Qualsevol altra tecla despres del game over repeteix el mateix
             # nivell directament, sense passar per la introduccio.
+            musica_atura()  # el seguent show_intro/run_round posara la seva
 
         clear_screen()
+        musica_atura()  # sortida neta: cap bucle queda sonant en segon pla
         if DEMO_MODE:
             # Resum final; el codi d'exit nomes falla si el motor s'ha
             # encallat (una derrota del pilot es un resultat valid, no error).
