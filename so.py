@@ -20,6 +20,7 @@ import math
 import os
 import random
 import struct
+import threading
 
 SND_ON = os.environ.get("R_TYPE_SO", "1") != "0"
 
@@ -87,7 +88,12 @@ def _wav(mostres: list) -> bytes:
 
 def _play(seqs) -> None:
     """Reprodueix una o mes seqüencies de mostres concatenades, en silenci
-    si so o la plataforma no ho permeten (mai ha de petar el joc)."""
+    si so o la plataforma no ho permeten (mai ha de petar el joc).
+
+    Implementació: `winsound` NO admet SND_MEMORY+SND_ASYNC (llença
+    RuntimeError), així que fem PlaySound SÍNCRON (SND_MEMORY sol) dins
+    un thread daemon: el joc no es bloqueja i el so sona sencer.
+    """
     if not actiu():
         return
     if not isinstance(seqs, list) or not seqs or isinstance(seqs[0], int):
@@ -97,9 +103,16 @@ def _play(seqs) -> None:
     global _ultim
     try:
         _ultim = _wav(mostres)
-        winsound.PlaySound(_ultim,
-                           winsound.SND_MEMORY | winsound.SND_ASYNC
-                           | winsound.SND_NODEFAULT)
+        dades = bytes(_ultim)  # còpia pròpia del thread: el buffer no mor
+
+        def _toca(buf=dades):
+            try:
+                winsound.PlaySound(buf, winsound.SND_MEMORY
+                                   | winsound.SND_NODEFAULT)
+            except (RuntimeError, OSError, ValueError, AttributeError):
+                pass
+
+        threading.Thread(target=_toca, daemon=True).start()
     except (RuntimeError, OSError, ValueError, AttributeError):
         pass
 
