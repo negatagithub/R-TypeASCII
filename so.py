@@ -11,7 +11,7 @@ en un buffer WAV volàtil.
 Es desactiva tot sol:
   - si `winsound` no està disponible (plataforma no Windows),
   - si la variable d'entorn R_TYPE_SO és "0",
-  - si la sortida estàndard no és interactiva (proves headless / CI).
+  - si els tests o el mode demo criden so.set_enabled(False).
 
 Les proves poden forçar-ho amb so.set_enabled(False). Reproduir mai ha de
 fer petar el joc: qualsevol error de so es menja en silenci.
@@ -20,7 +20,6 @@ import math
 import os
 import random
 import struct
-import sys
 
 SND_ON = os.environ.get("R_TYPE_SO", "1") != "0"
 
@@ -43,10 +42,14 @@ def set_enabled(actiu: bool) -> None:
 
 
 def actiu() -> bool:
-    """Cert si hi ha dispositiu de so i no l'hem desactivat."""
-    return (_DISPONIBLE and SND_ON
-            and bool(getattr(sys.stdout, "isatty", None)
-                     and sys.stdout.isatty()))
+    """Cert si hi ha dispositiu de so i no l'hem desactivat.
+
+    NOTA: abans també exigia ``sys.stdout.isatty()``, però això mutava
+    el joc en terminals integrats (VS Code) i redireccions on isatty()
+    menteix. Ara només cal winsound + flag actiu; els tests i el mode
+    demo el silencien explícitament amb ``set_enabled(False)``.
+    """
+    return _DISPONIBLE and SND_ON
 
 
 # --------------------------------------------------------------------------- #
