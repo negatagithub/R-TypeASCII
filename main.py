@@ -2384,6 +2384,16 @@ def show_intro() -> None:
                 CODE_HINT))
     print()
     print("   Premeu qualsevol tecla per comencar...")
+    if so is not None and not DEMO_MODE:
+        # La intro ja ve precarregada de main(); aquí només avancem la del
+        # nivell que començarà en prémer la tecla (~0.5 s de síntesi que el
+        # jugador NO nota perquè encara llegeix els controls). Quan run_round()
+        # cridi musica_sona(), el bucle ja és a la cau: sona a l'instant.
+        try:
+            if musica is not None:
+                musica.pre_sintetitzar(musica_nivell())
+        except (RuntimeError, OSError, ValueError, AttributeError):
+            pass
     musica_sona("intro")  # fanfarria de la introduccio, en bucle
     wait_key()
     musica_atura()  # el nivell posara la seva propia musica en comencar
@@ -2835,6 +2845,16 @@ def main() -> None:
         # superar-lo, continua amb el seguent com sempre.
         CURRENT_MAP = nivell_inicial
     ESTAT_HERETAT = {}                     # campanya nova: cap powerup herebat
+    if so is not None and not DEMO_MODE:
+        # Precàrrega d'àudio (anti-retard): sintetitza els 12 SFX (~0.2 s)
+        # i el bucle de la pantalla d'intro abans del primer frame, quan cap
+        # retard es nota. El primer tret ja no paga síntesi ni empaquetat.
+        try:
+            so.precarga()
+            if musica is not None:
+                musica.pre_sintetitzar("intro")
+        except (RuntimeError, OSError, ValueError, AttributeError):
+            pass
     demo_timeout = False
     try:
         if COLOR_ENABLED and not DEMO_MODE:

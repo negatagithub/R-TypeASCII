@@ -18,6 +18,7 @@ fer petar el joc: qualsevol error de so es menja en silenci.
 """
 import math
 import os
+import queue      # cua FIFO del motor d'àudio (anti-retard)
 import random
 import struct
 import threading
@@ -86,13 +87,109 @@ def _wav(mostres: list) -> bytes:
             + b"fmt " + fmt + b"data" + struct.pack("<I", len(dada)) + dada)
 
 
-def _play(seqs) -> None:
-    """Reprodueix una o mes seqüencies de mostres concatenades, en silenci
-    si so o la plataforma no ho permeten (mai ha de petar el joc).
+# --------------------------------------------------------------------------- #
+# Motor de cues: UN sol fil reproductor + precàrrega (anti-retard)            #
+# --------------------------------------------------------------------------- #
+# Disseny anterior: cada efecte creava el seu thread i cridava PlaySound
+# SÍNCRON (SND_MEMORY sol). Això té dues penalitzacions:
+#   1. winsound és UNA sola cua global: cada PlaySound nou TALLA l'anterior
+#      (el tret tallava l'explosió i viceversa) i el so sembla que arribi tard.
+#   2. Crear un thread per efecte costa ~1-5 ms, que se suma al retard.
+#
+# Disseny actual: UN fil reproductor persistent (`_FIL`) amb cua FIFO
+# (`_CUA`). El fil del joc només fa `_CUA.put(buf)` (~µs, mai bloqueja) i el
+# fil d'àudio encadena els buffers amb PlaySound SÍNCRON. Els efectes
+# freqüents (tret, explosions...) es PRECARREGUEN (`precarga()`) en arrencar
+# el joc: el primer tret ja no paga la síntesi (~2-11 ms) ni l'empaquetat WAV.
+# Amb `SND_NOSTOP` cap efecte talla l'anterior: si la cua és plena, el so nou
+# s'omet en comptes de tallar el que sona (millor perdre un tret que
+# entrebancar tota la banda sonora).
+_CUA = queue.Queue(maxsize=8)         # FIFO d'efectes pendents (buffers WAV)
+_FIL = None                           # fil reproductor persistent
+_PRECARREGAT = {}                     # nom -> bytes WAV llestos per sonar
 
-    Implementació: `winsound` NO admet SND_MEMORY+SND_ASYNC (llença
-    RuntimeError), així que fem PlaySound SÍNCRON (SND_MEMORY sol) dins
-    un thread daemon: el joc no es bloqueja i el so sona sencer.
+
+def _bucle_reproductor() -> None:
+    """Fil d'àudio: treu buffers de la cua i els sona un darrere l'altre."""
+    while True:
+        buf = _CUA.get()
+        if buf is None:               # sentinella: morir (només en tests)
+            return
+        try:
+            winsound.PlaySound(buf, winsound.SND_MEMORY
+                               | winsound.SND_NODEFAULT | winsound.SND_NOSTOP)
+        except (RuntimeError, OSError, ValueError, AttributeError):
+            pass
+
+
+def _assegura_fil() -> None:
+    """Engega el fil reproductor (un sol cop, daemon, mai trenca el joc)."""
+    global _FIL
+    if _FIL is not None and _FIL.is_alive():
+        return
+    try:
+        _FIL = threading.Thread(target=_bucle_reproductor, daemon=True)
+        _FIL.start()
+    except (RuntimeError, OSError, ValueError, AttributeError):
+        _FIL = None
+
+
+def _buf(nom: str, mostres: list) -> bytes:
+    """Guarda el WAV sintetitzat a la precàrrega i el retorna com a bytes."""
+    global _ultim
+    try:
+        _ultim = _wav(mostres)
+        dades = bytes(_ultim)  # còpia pròpia: el buffer no mor mai
+        _PRECARREGAT[nom] = dades
+        return dades
+    except (RuntimeError, OSError, ValueError, AttributeError,
+            struct.error, MemoryError):
+        return b""
+
+
+def _encua(dades: bytes) -> None:
+    """Posa un buffer a la cua d'àudio sense bloquejar mai el joc."""
+    if not dades:
+        return
+    _assegura_fil()
+    try:
+        _CUA.put_nowait(dades)   # cua plena -> ometem (SND_NOSTOP mana)
+    except queue.Full:
+        pass
+    except (RuntimeError, OSError, ValueError, AttributeError):
+        pass
+
+
+def precarga() -> None:
+    """Sintetitza un sol cop tots els SFX i els deixa llestos (anti-retard).
+
+    Cridar-ho en arrencar el joc (abans del primer frame): el primer tret ja
+    no paga síntesi ni empaquetat WAV. Amb so desactivat no fa res.
+    """
+    if not actiu():
+        return
+    for nom, fn in (("tret", _sint_tret), ("tret_enemic", _sint_tret_enemic),
+                    ("explosio_petita", _sint_explosio_petita),
+                    ("explosio_gran", _sint_explosio_gran),
+                    ("impacte", _sint_impacte), ("kit", _sint_kit),
+                    ("dron_aliat", _sint_dron_aliat), ("missil", _sint_missil),
+                    ("boss", _sint_boss), ("pausa", _sint_pausa),
+                    ("victoria", _sint_victoria),
+                    ("gameover", _sint_gameover)):
+        try:
+            _PRECARREGAT.setdefault(nom, bytes(_wav(fn())))
+        except (RuntimeError, OSError, ValueError, AttributeError,
+                struct.error, MemoryError):
+            pass
+
+
+def _play(seqs) -> None:
+    """(Compatibilitat) Reprodueix mostres JA sintetitzades via la cua.
+
+    Els efectes nous ja no passen per aquí: fan servir la precàrrega +
+    `_encua` directament (zero síntesi en el camí crític). Aquesta funció
+    encara empaqueta el WAV aquí (fora del fil del joc no hi ha res: qui la
+    crida ja és un efecte rar) i l'encua sense bloquejar.
     """
     if not actiu():
         return
@@ -103,17 +200,9 @@ def _play(seqs) -> None:
     global _ultim
     try:
         _ultim = _wav(mostres)
-        dades = bytes(_ultim)  # còpia pròpia del thread: el buffer no mor
-
-        def _toca(buf=dades):
-            try:
-                winsound.PlaySound(buf, winsound.SND_MEMORY
-                                   | winsound.SND_NODEFAULT)
-            except (RuntimeError, OSError, ValueError, AttributeError):
-                pass
-
-        threading.Thread(target=_toca, daemon=True).start()
-    except (RuntimeError, OSError, ValueError, AttributeError):
+        _encua(bytes(_ultim))
+    except (RuntimeError, OSError, ValueError, AttributeError,
+            struct.error, MemoryError):
         pass
 
 
@@ -156,83 +245,147 @@ def _soroll(f0: float, llavor: int = 7):
 
 
 # --------------------------------------------------------------------------- #
-# Efectes de so: cada un es una formula (o combinacio) que es reprodueix.    #
+# Efectes de so: síntesis pura (sense I/O) + enviament via precàrrega.        #
 # --------------------------------------------------------------------------- #
+# Cada `_sint_*` retorna la llista de mostres (cap so encara); cada efecte
+# públic mira la precàrrega i encua el buffer: ZERO síntesi en el camí
+# crític quan `precarga()` ja ha corregut (i una sola síntesi la primera
+# vegada si no).
+def _toca_precarregat(nom: str, sint_fn) -> None:
+    if not actiu():
+        return
+    dades = _PRECARREGAT.get(nom)
+    if not dades:
+        try:
+            dades = _buf(nom, sint_fn())
+        except (RuntimeError, OSError, ValueError, AttributeError):
+            return
+    _encua(dades)
+
+
+def _sint_tret() -> list:
+    return _onada(_square(1600, (250 - 1600) / 0.070), 70, 0.55)
+
+
 def tret() -> None:
     """Tret del cano: escombrat quadrat 1600 -> 250 Hz en 70 ms (laser)."""
-    _play(_onada(_square(1600, (250 - 1600) / 0.070), 70, 0.55))
+    _toca_precarregat("tret", _sint_tret)
+
+
+def _sint_tret_enemic() -> list:
+    return _onada(_saw(320, (180 - 320) / 0.050), 50, 0.40)
 
 
 def tret_enemic() -> None:
     """Tret enemic: serra baixa 320 -> 180 Hz, mes greu i curt."""
-    _play(_onada(_saw(320, (180 - 320) / 0.050), 50, 0.40))
+    _toca_precarregat("tret_enemic", _sint_tret_enemic)
+
+
+def _sint_explosio_petita() -> list:
+    seq = _onada(_soroll(1400), 70, 0.6)
+    seq += _onada(_square(360, (70 - 360) / 0.080), 80, 0.5)
+    return seq
 
 
 def explosio_petita() -> None:
     """Explosio petita (dron): esclat de soroll + escombrat descendent."""
-    seq = _onada(_soroll(1400), 70, 0.6)
-    seq += _onada(_square(360, (70 - 360) / 0.080), 80, 0.5)
-    _play(seq)
+    _toca_precarregat("explosio_petita", _sint_explosio_petita)
+
+
+def _sint_explosio_gran() -> list:
+    seq = _onada(_soroll(900, 3), 180, 0.75)
+    seq += _onada(_saw(200, (30 - 200) / 0.300), 300, 0.55)
+    seq += _onada(_sine(110, (25 - 110) / 0.350), 350, 0.4)
+    return seq
 
 
 def explosio_gran() -> None:
     """Explosio gran (caça/cap): soroll llarg + greu que s'enfonsa."""
-    seq = _onada(_soroll(900, 3), 180, 0.75)
-    seq += _onada(_saw(200, (30 - 200) / 0.300), 300, 0.55)
-    seq += _onada(_sine(110, (25 - 110) / 0.350), 350, 0.4)
-    _play(seq)
+    _toca_precarregat("explosio_gran", _sint_explosio_gran)
+
+
+def _sint_impacte() -> list:
+    return _onada(_saw(900, (100 - 900) / 0.090), 90, 0.7)
 
 
 def impacte() -> None:
     """La nau rep mal: escombrat dur 900 -> 100 Hz en 90 ms."""
-    _play(_onada(_saw(900, (100 - 900) / 0.090), 90, 0.7))
+    _toca_precarregat("impacte", _sint_impacte)
+
+
+def _sint_kit() -> list:
+    seq = _onada(_sine(523.25), 70, 0.5)
+    seq += _onada(_sine(659.25), 110, 0.5)
+    return seq
 
 
 def kit() -> None:
     """Kit de reparacio recollit: arpegi ascendent de dues notes (do-mi)."""
-    seq = _onada(_sine(523.25), 70, 0.5)
-    seq += _onada(_sine(659.25), 110, 0.5)
-    _play(seq)
+    _toca_precarregat("kit", _sint_kit)
+
+
+def _sint_dron_aliat() -> list:
+    seq = _onada(_sine(523.25), 60, 0.5)
+    seq += _onada(_sine(659.25), 60, 0.5)
+    seq += _onada(_sine(783.99), 120, 0.55)
+    return seq
 
 
 def dron_aliat() -> None:
     """Dron aliat unit a l'esquadra: arpegi de tres notes (do-mi-sol)."""
-    seq = _onada(_sine(523.25), 60, 0.5)
-    seq += _onada(_sine(659.25), 60, 0.5)
-    seq += _onada(_sine(783.99), 120, 0.55)
-    _play(seq)
+    _toca_precarregat("dron_aliat", _sint_dron_aliat)
+
+
+def _sint_missil() -> list:
+    return _onada(_sine(180, (950 - 180) / 0.160), 160, 0.5)
 
 
 def missil() -> None:
     """Missil guiat: escombrat ascendent 180 -> 950 Hz (xiulet)."""
-    _play(_onada(_sine(180, (950 - 180) / 0.160), 160, 0.5))
+    _toca_precarregat("missil", _sint_missil)
 
 
-def boss() -> None:
-    """El cap apareix: dron greu amb tremolo modulat."""
+def _sint_boss() -> list:
     def gen(t):
         base = _square(62.5)(t)
         trem = 0.6 + 0.4 * math.sin(2 * math.pi * 5 * t)
         return base * trem
-    _play(_onada(gen, 700, 0.7))
+    return _onada(gen, 700, 0.7)
+
+
+def boss() -> None:
+    """El cap apareix: dron greu amb tremolo modulat."""
+    _toca_precarregat("boss", _sint_boss)
+
+
+def _sint_pausa() -> list:
+    return _onada(_sine(880), 45, 0.4)
 
 
 def pausa() -> None:
     """Pausa activada: blip curt i net."""
-    _play(_onada(_sine(880), 45, 0.4))
+    _toca_precarregat("pausa", _sint_pausa)
 
 
-def victoria() -> None:
-    """Nivell superat: fanfaria ascendent (do-mi-sol-do')."""
+def _sint_victoria() -> list:
     seq = _onada(_square(523.25), 90, 0.45)
     seq += _onada(_square(659.25), 90, 0.45)
     seq += _onada(_square(783.99), 90, 0.45)
     seq += _onada(_square(1046.5), 200, 0.5)
-    _play(seq)
+    return seq
+
+
+def victoria() -> None:
+    """Nivell superat: fanfaria ascendent (do-mi-sol-do')."""
+    _toca_precarregat("victoria", _sint_victoria)
+
+
+def _sint_gameover() -> list:
+    seq = _onada(_saw(520, (60 - 520) / 0.600), 600, 0.6)
+    seq += _onada(_sine(260, (50 - 260) / 0.450), 450, 0.45)
+    return seq
 
 
 def gameover() -> None:
     """Fi de partida: escombrat descendent llarg i trist."""
-    seq = _onada(_saw(520, (60 - 520) / 0.600), 600, 0.6)
-    seq += _onada(_sine(260, (50 - 260) / 0.450), 450, 0.45)
-    _play(seq)
+    _toca_precarregat("gameover", _sint_gameover)

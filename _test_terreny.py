@@ -501,4 +501,25 @@ main.CURRENT_MAP = 0
 main.musica_sona("nivell_1")               # demo/tests: no-op segur
 main.musica_atura()
 
+# 24. anti-retard d'àudio: precàrrega SFX + cua sense bloqueig
+import time as _t
+main.so._PRECARREGAT.clear()
+main.so.precarga()                         # so desactivat: no fa res
+assert main.so._PRECARREGAT == {}, "sense so no es precarrega res"
+main.so.SND_ON = True                      # forcem síntesi (sense sonar: cua)
+main.so._PRECARREGAT.clear()
+t0 = _t.time(); main.so.precarga(); pre_ms = (_t.time() - t0) * 1000
+assert set(main.so._PRECARREGAT) == {"tret", "tret_enemic", "explosio_petita",
+    "explosio_gran", "impacte", "kit", "dron_aliat", "missil", "boss",
+    "pausa", "victoria", "gameover"}, sorted(main.so._PRECARREGAT)
+t0 = _t.time()                             # camí crític: només encuar (~µs)
+main.so.tret(); main.so.explosio_gran(); main.so.kit()
+assert (_t.time() - t0) * 1000 < 50, "l'efecte precarregat no pot sintetitzar"
+main.so.set_enabled(False)                 # restaurem silenci dels tests
+while not main.so._CUA.empty():
+    main.so._CUA.get_nowait()              # buidem la cua de la prova
+assert main.so._FIL is None or main.so._FIL.daemon
+_mus.pre_sintetitzar("intro")              # no-op segur fins i tot mut
+_mus.pre_sintetitzar("no-existeix")
+
 print("TOT BE: tots els blocs de proves superats")

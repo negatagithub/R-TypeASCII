@@ -141,28 +141,64 @@ def seq(cadena):
     return out
 
 
+def pre_sintetitzar(nom):
+    """Deixa el bucle `nom` llest a la cau (anti-retard del primer compas)."""
+    if nom in PARTITURA:
+        try:
+            sintetitzar(PARTITURA[nom])
+        except (RuntimeError, OSError, ValueError, AttributeError,
+                MemoryError):
+            pass
+
+
 def _bucle_en_fil(buf, marca):
     import winsound
-    while not marca.is_set():
-        try:
-            winsound.PlaySound(bytes(buf), winsound.SND_MEMORY
-                               | winsound.SND_NODEFAULT)
+    while not marca.is_set():     # un PlaySound per volta: si un SFX ens
+        try:                      # talla (SND_NOSTOP el protegeix), el bucle
+            winsound.PlaySound(bytes(buf), winsound.SND_MEMORY  # es reprèn
+                               | winsound.SND_NODEFAULT | winsound.SND_NOSTOP)
         except (RuntimeError, OSError, ValueError, AttributeError):
+            return
+        if marca.is_set():
             return
 
 
 def sona(nom):
-    """Engega el bucle de la peca `nom` (atura l'anterior). No bloqueja."""
+    """Engega el bucle de la peca `nom` (atura l'anterior). No bloqueja.
+
+    La musica comparteix el canal winsound amb els SFX: perque el bucle no
+    ROBI el canal als efectes (i aquests no hagin d'esperar 8 s a sonar),
+    el bucle es parteix en TROSSOS d'~1 s: entre tros i tros els SFX
+    encuats per `so` tenen ocasio de sonar. Peatge: la musica fa micro-pauses
+    quan hi ha foc intens (preferim el tret a temps que el fons continu).
+    """
     global _FIL_ACTUAL, _NOM_ACTUAL
     atura()
     _NOM_ACTUAL = None
     if not so.actiu() or nom not in PARTITURA:
         return
     try:
-        buf = so._wav(sintetitzar(PARTITURA[nom]))
+        mostres = sintetitzar(PARTITURA[nom])
+        tros = max(1, int(RATE * 1.0))     # trossos d'~1 s (buit de SFX)
+        trossos = [so._wav(mostres[i:i + tros])
+                   for i in range(0, len(mostres), tros)]
         marca = threading.Event()
-        fil = threading.Thread(target=_bucle_en_fil, args=(buf, marca),
-                               daemon=True)
+
+        def _bucle_trossejat():
+            import winsound
+            while not marca.is_set():
+                for t in trossos:          # cada PlaySound = ~1 s de musica
+                    if marca.is_set():     # (talla neta en atura/canvi)
+                        return
+                    try:
+                        winsound.PlaySound(  # SND_NOSTOP: no talla els SFX
+                            bytes(t), winsound.SND_MEMORY
+                            | winsound.SND_NODEFAULT | winsound.SND_NOSTOP)
+                    except (RuntimeError, OSError, ValueError,
+                            AttributeError):
+                        return
+
+        fil = threading.Thread(target=_bucle_trossejat, daemon=True)
         _FIL_ACTUAL = (fil, marca)
         _NOM_ACTUAL = nom
         fil.start()
