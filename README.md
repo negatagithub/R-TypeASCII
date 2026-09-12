@@ -221,6 +221,10 @@ R-TypeASCII/
 ├── nivell_4.py           # Nivell 4: Galeries d'autor (terreny dibuixat + fons)
 ├── nivell_5.py           # Nivell 5: Bastió urbà (ciutat, grafitis i boss final)
 ├── nivell_<n>.py         # Més nivells: es carreguen en ordre numèric
+├── assets/nivells/<n>/   # Disseny artístic en fitxers a part (capes externes)
+│   ├── capes.json        #   definició de capes, rols i paletes
+│   ├── parets.txt        #   primer pla SOLID (l'única capa que col·lisiona)
+│   └── fons_*.txt / parallax_*.txt   # capes decoratives amb parallax
 ├── eines_art.py          # Eina: valida i previsualitza l'art d'un nivell
 ├── README.md             # Documentació d'usuari (aquest fitxer)
 ├── PROJECT.md            # Documentació tècnica del projecte

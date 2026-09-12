@@ -181,14 +181,50 @@ Documentació completa del format antic (elevacions) al docstring de
 - Eina d'autoria: `eines_art.py` (valida el nivell i previsualitza l'art amb
   colors sense jugar).
 
-### 3.4 Figures auxiliars (definides a cada fitxer de nivell)
+### 3.4.1 Capes externes (disseny artístic en fitxers a part)
+
+Des del nivell 4, el disseny visual pot viure en **fitxers de text independents**
+del codi del nivell, dins `assets/nivells/<n>/`. Així l'artista dibuixa el
+nivell sencer **caràcter a caràcter**, sense tocar cap `.py`, i el motor només
+hi llegeix:
+
+```
+assets/nivells/4/
+├── capes.json            # definició de capes, rols i paletes ANSI
+├── parets.txt            # primer pla SOLID: l'única capa que col·lisiona
+├── fons_dalt.txt         # capa decorativa superior (cel, estels, muntanyes)
+├── fons_baix.txt         # capa decorativa inferior (terra, llacuna)
+├── parallax_dalt.txt     # capa de profunditat superior (roques flotants)
+└── parallax_baix.txt     # capa de profunditat inferior (cristalls, ones)
+```
+
+- `capes.json` declara cada capa amb el seu `arxiu` (`20 files × N columnes`,
+  mateix format de dibuix que l'art), el seu `rol` i la seva `paleta`
+  (caràcter → `[caràcter a pintar, color ANSI]`).
+- La capa amb rol **"parets"** es converteix en l'`art_columns` normalitzat
+  del nivell: **és l'ÚNICA capa que col·lisiona** (nau, trets i pilot). La
+  resta són decoratives amb parallax: mai col·lisionen i el pilot les ignora.
+- `capes.json` pot portar `durada` i `spawns` si es vol tenir les dades del
+  joc fora del `.py`; si no els porta, es fan servir els del `LEVEL` intern.
+- El carregador `_load_external_capes()` s'activa quan existeix
+  `assets/nivells/<n>/capes.json`; sense el fitxer, el nivell funciona
+  exactament com abans (retrocompatible).
+- `draw_fons()` reuneix les capes decoratives per nom (`fons_dalt`,
+  `fons_baix`, `parallax_dalt`, `parallax_baix`), cadascuna amb la seva
+  cadença de parallax (`FONS_EVERY` × 3 la més profunda, × 2, × 1...), i les
+  pinta de més lluny a més a prop sobre els mateixos buffers, la primera de
+  totes al `render()`.
+- `eines_art.py` previsualitza també cada capa externa per comprovar el
+  disseny sense jugar.
+
+### 3.5 Figures auxiliars (definides a cada fitxer de nivell)
 - `bump(h)`: perfil triangular 1..h..1 (amplada 2h−1).
 - `trapei(h, pla)`: rampa ascendent + plana de `pla` columnes + rampa
   descendent (amplada 2h+pla−1).
 - `fila(*blocs)`: encadena perfils en una fila de columnes; cada enter
   introdueix zeros.
 
-### 3.5 Nivells actuals
+### 3.6 Nivells actuals
 | Nivell | Nom | Durada | Spawns | Trams de terreny | Corredor mínim de disseny |
 |---|---|---|---|---|---|
 | 1 | PRIMER CONTACTE | 1800 ticks (~144 s) | 59 | 21 | 10 cel·les |

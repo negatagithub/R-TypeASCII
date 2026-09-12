@@ -7,6 +7,7 @@ import main
 # posicions de caracter no coincideixen amb les columnes del camp.
 main.COLOR_ENABLED = False
 import main
+main.so.set_enabled(False)  # so desactivat en tests
 
 # 1. Els nivells venen dels fitxers numerats, en ordre (10 d'art)
 assert len(main.MAPS) == 10
@@ -269,10 +270,13 @@ assert st8["player_x"] == esperat_x, (st8["player_x"], esperat_x)
 # 15. terreny dibuixat (art): normalitzacio i errors de dibuix
 m4 = main.MAPS[3]
 assert m4["name"] == "NIVELL 4 - GALERIES D'AUTOR"
-assert m4["art_columns"] and m4["fons_columns"], "el nivell 4 es d'art"
+# El nivell 4 te el disseny en capes EXTERNES: art (parets) + 4 capes de fons.
+assert m4["art_columns"], "el nivell 4 es d'art"
 assert m4["terrain_events"] == ()
 assert len(m4["art_columns"]) == 204, len(m4["art_columns"])
-assert len(m4["fons_columns"]) == 96, len(m4["fons_columns"])
+assert len(m4["fons_capes"]) == 4, m4["fons_capes"]
+assert all(len(v) == 96 for v in m4["fons_capes"].values()), \
+    {k: len(v) for k, v in m4["fons_capes"].items()}
 assert all(len(c) == main.ART_CANON_H for c in m4["art_columns"])
 PALETA_PROVA = {"x": ("#", "37")}
 

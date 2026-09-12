@@ -38,6 +38,7 @@ def strip_ansi(s):
 g.msvcrt = None                       # mode headless
 g.clear_screen = lambda: None
 g.time.sleep = lambda s: None
+g.so.set_enabled(False)            # so desactivat en tests headless
 g.BASE_SPAWN_CHANCE = 0.0
 g.RAMP_PER_MINUTE = 0.0
 random.seed(42)

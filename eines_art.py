@@ -74,10 +74,13 @@ def main_eina() -> int:
             continue
         vists += 1
         fons = len(mapa["fons_columns"]) if mapa["fons_columns"] else 0
+        if mapa.get("fons_capes"):
+            fons = " + ".join(f"{k}:{len(v)}"
+                              for k, v in mapa["fons_capes"].items())
         minim = min(_max_free_run(c) for c in mapa["art_columns"])
         print(mapa["name"])
         print(f"  art: {len(mapa['art_columns'])} columnes x "
-              f"{main.ART_CANON_H} files | fons: {fons} columnes (bucle) | "
+              f"{main.ART_CANON_H} files | fons: {fons} (bucle) | "
               f"durada: {mapa['duration']} ticks | spawns: "
               f"{len(mapa['spawns'])}")
         print(f"  corredor lliure minim: {minim} celes "
@@ -85,7 +88,10 @@ def main_eina() -> int:
         errors = check_spawns(mapa)
         print(f"  spawns: " + ("OK" if errors == 0 else f"{errors} errors"))
         preview(mapa["art_columns"], "  --- PRIMER PLA (solid) ---")
-        if mapa["fons_columns"]:
+        if mapa.get("fons_capes"):
+            for nom, cols in mapa["fons_capes"].items():
+                preview(cols, f"  --- FONS: {nom} (parallax, decoratiu) ---")
+        elif mapa["fons_columns"]:
             preview(mapa["fons_columns"],
                     "  --- FONS (parallax, decoratiu) ---")
         print()

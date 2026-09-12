@@ -1,0 +1,58 @@
+{
+  "capes": [
+    {
+      "nom": "fons_dalt",
+      "arxiu": "fons_dalt.txt",
+      "rol": "dalt",
+      "paleta": {
+        ".": [".", "90"],
+        "*": ["*", "37"],
+        "^": ["^", "34"]
+      }
+    },
+    {
+      "nom": "parallax_dalt",
+      "arxiu": "parallax_dalt.txt",
+      "rol": "parallax_dalt",
+      "paleta": {
+        "*": ["*", "37"],
+        ",": [",", "90"],
+        "+": ["+", "36"]
+      }
+    },
+    {
+      "nom": "parallax_baix",
+      "arxiu": "parallax_baix.txt",
+      "rol": "parallax_baix",
+      "paleta": {
+        "=": ["=", "94"],
+        "~": ["~", "36"],
+        "!": ["!", "33"]
+      }
+    },
+    {
+      "nom": "fons_baix",
+      "arxiu": "fons_baix.txt",
+      "rol": "baix",
+      "paleta": {
+        "^": ["^", "34"],
+        ".": [".", "90"],
+        "-": ["-", "30"],
+        ":": [":", "30"],
+        "~": ["~", "36"]
+      }
+    },
+    {
+      "nom": "parets",
+      "arxiu": "parets.txt",
+      "rol": "parets",
+      "paleta": {
+        "#": ["#", "37"],
+        "%": ["%", "90"],
+        "@": ["@", "95"],
+        "=": ["=", "36"],
+        "^": ["^", "33"]
+      }
+    }
+  ]
+}

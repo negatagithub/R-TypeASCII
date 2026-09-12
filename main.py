@@ -61,6 +61,11 @@ import sys      # escriptura directa a stdout: frames sense parpalleig
 import time
 
 try:
+    import so  # efectes de so procedurals (sintesi, sense arxius)
+except ImportError:       # entorns sense so (CI, plataformes exotiques)
+    so = None
+
+try:
     import msvcrt  # només Windows: lectura de teclat sense bloquejar
 except ImportError:  # permet provar la lògica del joc en altres plataformes
     msvcrt = None
@@ -495,6 +500,73 @@ def _validate_art_playable(columns, source: str) -> None:
                          f"primera a la darrera columna")
 
 
+def _read_layer_rows(path: str, source: str) -> tuple:
+    """Llegeix les files de dibuix d'una capa externa .txt.
+
+    Només s'ignoren les línies que comencen amb '#' a la columna 0
+    (comentaris de l'arxiu de disseny). Les línies en blanc i les que
+    comencen amb espais SON files de dibuix (cel obert o roca vorejada) i
+    compten. Tolerància: una línia buida final de més es retalla.
+    """
+    with open(path, "r", encoding="utf-8") as fh:
+        rows = [l.rstrip("\r\n") for l in fh if not l.startswith("#")]
+    while len(rows) > ART_CANON_H and rows and not rows[-1].strip():
+        rows.pop()                        # salt de línia final sobrant
+    if not rows:
+        raise ValueError(f"{source}: la capa {path} es buida")
+    if len(rows) != ART_CANON_H:
+        raise ValueError(f"{source}: la capa {path} ha de tenir "
+                         f"{ART_CANON_H} files (te {len(rows)})")
+    return tuple(rows)
+
+
+def _load_external_capes(source: str):
+    """Carrega les capes externes d'un nivell des de assets/nivells/<n>/.
+
+    Quan assets/nivells/<n>/capes.json existeix, el disseny del nivell no viu
+    a dins del fitxer de codi sino en FITXERS DE TEXT a part (dibuixes les
+    parets, el fons de dalt, el fons de baix i les capes de parallax amb
+    caracters, un a un). Aquest carregador normalitza cada fitxer i retorna:
+
+      (art_columns, fons_capes)
+
+    on art_columns son les columnes de la capa amb rol "parets" (l'UNICA que
+    col·lisiona) i fons_capes es un dict {nom_capa: columnes} amb les capes
+    decoratives (mai col·lisionen ni el pilot les usa). Si no existeix cap
+    capes.json, retorna (None, None) i el nivell fa servir el seu LEVEL
+    intern (comportament original).
+
+    Retorna tambee la durada i els spawns externs si capes.json els porta
+    (dades del joc separades del disseny visual).
+    """
+    match = re.search(r"nivell_(\d+)\.py$", source, re.IGNORECASE)
+    if match is None:
+        return None, None, None, None
+    carpeta = os.path.join(
+        os.path.dirname(os.path.abspath(__file__)),
+        "assets", "nivells", match.group(1))
+    fitxer_capes = os.path.join(carpeta, "capes.json")
+    if not os.path.isfile(fitxer_capes):
+        return None, None, None, None
+    with open(fitxer_capes, "r", encoding="utf-8") as fh:
+        cfg = json.load(fh)
+    art = None
+    fons_capes = {}
+    for capa in cfg.get("capes", ()):
+        nom = capa["nom"]
+        arxiu = os.path.join(carpeta, capa["arxiu"])
+        rows = _read_layer_rows(arxiu, source)
+        paleta = {k: tuple(v) for k, v in capa.get("paleta", {}).items()}
+        columns = _normalize_art(rows, paleta, source, nom)
+        if capa.get("rol") == "parets":
+            art = columns
+        else:
+            fons_capes[nom] = columns
+    durada = cfg.get("durada")
+    spawns = tuple(tuple(s) for s in cfg.get("spawns", ())) or None
+    return art, (fons_capes or None), durada, spawns
+
+
 def _normalize_level(level, source: str) -> dict:
     """Valida i normalitza el diccionari LEVEL d'un fitxer de nivell.
 
@@ -502,29 +574,45 @@ def _normalize_level(level, source: str) -> dict:
     elevacions (vegeu nivell_1.py) o 'art'/'fons' dibuixats (vegeu
     nivell_4.py). El resultat exposa els dos en forma normalitzada: les
     columnes d'art ja venen com a cel·les per columna de dibuix.
+
+    Si el nivell te capes externes (assets/nivells/<n>/capes.json), el
+    primer pla i el fons MULTICAPA es carreguen des d'aquests fitxers i
+    tenen prioritat sobre l'art intern del LEVEL.
     """
     if not isinstance(level, dict):
         raise ValueError(f"{source}: LEVEL ha de ser un diccionari")
+    ext_art, ext_fons, ext_durada, ext_spawns = _load_external_capes(source)
+    duration = int(ext_durada if ext_durada is not None
+                   else level["duration"])
+    spawns = tuple(tuple(spawn) for spawn in (
+        ext_spawns if ext_spawns is not None else level.get("spawns", ())))
     normalized = {
         "name": str(level.get("name", "NIVELL")),
-        "duration": int(level["duration"]),
-        "spawns": tuple(tuple(spawn) for spawn in level.get("spawns", ())),
+        "duration": duration,
+        "spawns": spawns,
         "terrain_events": _normalize_terrain(level.get("terrain", ()), source),
         "art_columns": None,
         "fons_columns": None,
+        "fons_capes": ext_fons,
     }
-    art = level.get("art")
-    if art:
+    if ext_art is not None:
         if normalized["terrain_events"]:
             raise ValueError(f"{source}: 'terrain' i 'art' no poden coexistir")
-        normalized["art_columns"] = _normalize_art(
-            art, level.get("paleta"), source, "art")
+        normalized["art_columns"] = ext_art
         _validate_art_playable(normalized["art_columns"], source)
-        if level.get("fons"):
-            normalized["fons_columns"] = _normalize_art(
-                level["fons"], level.get("paleta_fons"), source, "fons")
-    elif level.get("fons"):
-        raise ValueError(f"{source}: 'fons' nomes te sentit amb 'art'")
+    else:
+        art = level.get("art")
+        if art:
+            if normalized["terrain_events"]:
+                raise ValueError(f"{source}: 'terrain' i 'art' no poden coexistir")
+            normalized["art_columns"] = _normalize_art(
+                art, level.get("paleta"), source, "art")
+            _validate_art_playable(normalized["art_columns"], source)
+            if level.get("fons"):
+                normalized["fons_columns"] = _normalize_art(
+                    level["fons"], level.get("paleta_fons"), source, "fons")
+        elif level.get("fons"):
+            raise ValueError(f"{source}: 'fons' nomes te sentit amb 'art'")
     for spawn in normalized["spawns"]:
         if len(spawn) != 4:
             raise ValueError(f"{source}: cada spawn ha de ser "
@@ -1212,6 +1300,18 @@ def _shoot_flame(state, level):
         state["shots"].append(shot)
 
 
+def _so(fn) -> None:
+    """Dispara un efecte de so procedurals si el modul `so` esta disponible.
+
+    Cap crida mai ha de trencar el joc: `so` pot ser None (plataforma sense
+    winsound) o pot tenir el so desactivat (tests, mode demo). Aquesta funcio
+    encapsula aquesta comprovacio, de manera que els ganchs a l'audio són un
+    sola línia inofensiva on sigui que siguin.
+    """
+    if so is not None:
+        fn()
+
+
 def shoot(state: dict) -> None:
     """Dispara projectils des del morro de la nau, si el cano es carregat."""
     if state["shot_cooldown"] > 0:
@@ -1237,6 +1337,7 @@ def shoot(state: dict) -> None:
     for i in range(state.get("wingmans", 0)):
         wx, wy = wingman_position(state, i)
         state["shots"].append(_make_shot(wx + s_w_n(WINGMAN_SPRITE), wy))
+    _so(so.tret)  # so del tret del canó
     state["shot_cooldown"] = SHOT_COOLDOWN_TICKS
 
 
@@ -1450,6 +1551,10 @@ def _destroy_enemy(state: dict, enemy: dict, ex: float, ey: float,
     state["effects"].append(make_effect(
         ex + ew / 2, ey + eh / 2,
         BOOM_FRAMES if ew >= 3.0 / SCREEN_WIDTH else SPARK_FRAMES))
+    if ew >= 3.0 / SCREEN_WIDTH:
+        _so(so.explosio_gran)  # explosio gran (cap/boss)
+    else:
+        _so(so.explosio_petita)  # explosio petita
     if enemy["kind"] == BOSS_KIND:
         state["completed"] = True
         if random.random() < BOSS_DROP_CHANCE:
@@ -1487,6 +1592,8 @@ def update_world(state: dict) -> None:
                 enemy["amp"] = 0.08
                 enemy["phase"] = 0.0
             state["enemies"].append(enemy)
+            if kind == BOSS_KIND:
+                _so(so.boss)  #                      # el cap apareix: dron greu
             # Densitat d'enemics (SPAWN_DENSITY > 1): probabilitat extra de
             # repetir el spawn, desplaçat verticalment per no solapar-se.
             # El cap (boss) mai es duplica. Es fa servir la MATEIXA fila
@@ -1598,6 +1705,7 @@ def update_world(state: dict) -> None:
         if enemy["fire_cooldown"] <= 0 and enemy["x"] < 0.95:
             shot = make_enemy_shot(enemy, player_center_x, player_center_y)
             if shot is not None:
+                _so(so.tret_enemic)  # el tret enemic surt
                 state["enemy_shots"].append(shot)
             enemy["fire_cooldown"] = max(
                 9, random.randint(18, 36) - enemy["kind"] * 5)
@@ -1627,6 +1735,7 @@ def update_world(state: dict) -> None:
         state["missile_cooldown"] -= 1.0
         if state["missile_cooldown"] <= 0.0:
             if len(state["missiles"]) < state["missile_level"]:
+                _so(so.missil)  # xiulet del missil
                 state["missiles"].append(make_missile(state))
             state["missile_cooldown"] = MISSILE_INTERVAL_TICKS
     for missile in state["missiles"]:
@@ -1650,6 +1759,7 @@ def update_world(state: dict) -> None:
                 # Dron aliat: s'afegeix a l'esquadra fins al maxim; si ja
                 # hi ha MAX_WINGMANS, el kit es converteix en punts bonus.
                 if state["wingmans"] < MAX_WINGMANS:
+                    _so(so.dron_aliat)  # dron aliat reclutat
                     state["wingmans"] += 1
                 else:
                     state["score"] += WINGMAN_SCORE_BONUS
@@ -1659,6 +1769,7 @@ def update_world(state: dict) -> None:
                 # bonus, com els drons.
                 if state["missile_level"] < MAX_MISSILES:
                     state["missile_level"] += 1
+                    _so(so.missil)  # nivell de missil recollit
                 else:
                     state["score"] += MISSILE_SCORE_BONUS
             elif p.get("weapon"):
@@ -1667,11 +1778,14 @@ def update_world(state: dict) -> None:
                 if state.get("weapon_type") == p["weapon_type"]:
                     state["weapon_level"] = min(MAX_WEAPON_LEVEL,
                                                 state.get("weapon_level", 0) + 1)
+                    _so(so.kit)  # arma puja de nivell
                 else:
                     state["weapon_type"] = p["weapon_type"]
+                    _so(so.kit)  # arma canviada
                     state["weapon_level"] = 1
             else:
                 state["hp"] = min(SHIP_MAX_HP, state["hp"] + p["heal"])
+                _so(so.kit)  # kit de reparacio recollit
             continue                            # recollit
         remaining.append(pu)
     state["powerups"] = remaining
@@ -1795,6 +1909,7 @@ def update_world(state: dict) -> None:
         if rects_overlap(*sr, *enemy_rect(enemy)):
             state["hp"] = max(0, state["hp"]
                               - ENEMY_TYPES[enemy["kind"]]["damage"])
+            _so(so.impacte)  # casol xocat per enemic
             ex, ey, ew, eh = enemy_rect(enemy)
             if enemy["kind"] == BOSS_KIND:
                 # El cap no explota: l'impacte deixa una espurna i la nau
@@ -1823,6 +1938,7 @@ def update_world(state: dict) -> None:
                          s_w_n(PLAYER_SPRITE), s_h_n(PLAYER_SPRITE),
                          shot["x"], shot["y"], enemy_shot_size_w, enemy_shot_size_h):
             state["hp"] = max(0, state["hp"] - shot["damage"])
+            _so(so.impacte)  # tret enemic trepitja la nau
             ex = shot["x"] + enemy_shot_size_w / 2
             ey = shot["y"] + enemy_shot_size_h / 2
             state["effects"].append(make_effect(ex, ey, SPARK_FRAMES))
@@ -1966,13 +2082,45 @@ def draw_fons(state: dict) -> None:
     El render la crida ABANS que res: el primer pla i les entitats li queden
     al damunt, i els espais de l'art no l'esborren (el cel deixa veure el
     fons). Sense 'fons' al nivell, no pinta res.
+
+    Admet DOS formats, de forma retrocompatible:
+     - Format nou (capes externes): `fons_capes` es un dict {nom: columnes}
+       amb TANTES capes com vulgui el disseny de nivell (ex. fons_dalt,
+       fons_baix, parallax_dalt, parallax_baix...). Cada capa es mou a un
+       ritme de parallax independent (mes profunda = mes lenta) i es pinta
+       de mes lluny a mes a prop.
+     - Format antic (nivells 4-10): `fons_columns` es una llista plana de
+       columnes de celes, totes amb el mateix ritme.
     """
+    capes = state["map"].get("fons_capes")
     columns = state["map"].get("fons_columns")
-    if not columns:
+    if not capes and not columns:
+        return
+    rows_map = [_art_row(y) for y in range(SCREEN_HEIGHT)]
+    if capes:
+        # Ordre de pintat (mes lluny a mes a prop) i cadencia (divisor de
+        # FONS_EVERY) per capa. Els noms son els del capes.json del nivell.
+        ordre = (
+            ("fons_dalt", FONS_EVERY * 3),
+            ("fons_baix", FONS_EVERY * 2),
+            ("parallax_dalt", FONS_EVERY),
+            ("parallax_baix", FONS_EVERY),
+        )
+        for nom, cadencia in ordre:
+            capa = capes.get(nom)
+            if not capa:
+                continue
+            shift = state["ticks"] // cadencia
+            width = len(capa)
+            for x in range(SCREEN_WIDTH):
+                column = capa[(x + shift) % width]
+                for y, src in enumerate(rows_map):
+                    cell = column[src]
+                    if cell is not None:
+                        _plot(cell[0], x, y, cell[1])
         return
     shift = state["ticks"] // FONS_EVERY
     width = len(columns)
-    rows_map = [_art_row(y) for y in range(SCREEN_HEIGHT)]
     for x in range(SCREEN_WIDTH):
         column = columns[(x + shift) % width]
         for y, src in enumerate(rows_map):
@@ -2509,6 +2657,7 @@ def pause_round(state: dict) -> bool:
     """
     print(paint(f" PAUSA - prem '{KEY_PAUSE}' per continuar, "
                 f"'{KEY_QUIT}' per sortir", CODE_HINT))
+    _so(so.pausa)  # so de pausa
     while True:
         ch = wait_key()
         if ch == KEY_QUIT:
@@ -2573,8 +2722,10 @@ def run_round():
         # 3. La nau ha perdut tota la vida? --------------------------------------
         if state["hp"] <= 0:
             ESTAT_HERETAT = {}          # la mort ho esborra tot: tornes a zero
+            _so(so.gameover)  # fi de partida
             return "dead", state["score"]
         if state["completed"]:
+            _so(so.victoria)  # nivell superat
             animate_completion(state)
             # Desarem el que es conserva entre nivells de la campanya.
             ESTAT_HERETAT = {
@@ -2641,6 +2792,8 @@ def main() -> None:
     DEMO_MODE = "--demo" in sys.argv[1:]
     if DEMO_MODE:
         random.seed(DEMO_SEED)             # reproduibilitat del pilot
+        if so is not None:
+            so.set_enabled(False)  # demo/ci: silenciar so
     nivell_inicial = level_from_args(sys.argv)
     if nivell_inicial is not None:
         # Mode de prova: la campanya comença al nivell demanat i, en
