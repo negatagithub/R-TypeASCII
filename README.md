@@ -195,6 +195,13 @@ complet del joc al terminal o a la CI.
   `nivell_10` pols solar, `nivell_11` tambors de jungla). Bucle polifònic de
   3 veus (melodia + baix + percussió) generat un sol cop i guardat en cau;
   `R_TYPE_SO=0` ho silencia tot i en `--demo` no sona res.
+- **Àudio en temps real i simultània** (`so.py`) — el motor és un
+  **mesclador sobre `waveOut`** (`winmm.dll` via `ctypes`: tot stdlib) amb un
+  stream continu de trossos de ~20 ms que **suma totes les veus actives**:
+  trets, explosions i música sonen SIMULTÀNIS (polifònia real, cap so talla
+  cap altre) i un efecte nou se sent en ~20-40 ms (cap síntesi al fil del
+  joc: els SFX van pre-renderitzats). Si la suma desborda, es retalla el pic
+  global (mai clip dur). `R_TYPE_SO=0` ho silencia tot.
 
 ## Afinament
 
@@ -236,7 +243,7 @@ R-TypeASCII/
 │   └── fons_*.txt / parallax_*.txt   # capes decoratives amb parallax
 ├── eines_art.py          # Eina: valida i previsualitza l'art d'un nivell
  ├── musica.py             # Musica de fons: 12 partitures procedurals en bucle
- ├── so.py                 # Efectes de so procedurals (sintesi, sense arxius)
+ ├── so.py                 # Mesclador EN TEMPS REAL (waveOut) + SFX procedurals
 ├── README.md             # Documentació d'usuari (aquest fitxer)
 ├── PROJECT.md            # Documentació tècnica del projecte
 ├── PROJECT_SUMMARY.md    # Resum de disseny original (històric)

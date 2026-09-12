@@ -501,24 +501,49 @@ main.CURRENT_MAP = 0
 main.musica_sona("nivell_1")               # demo/tests: no-op segur
 main.musica_atura()
 
-# 24. anti-retard d'àudio: precàrrega SFX + cua sense bloqueig
+# 24. motor d'audio EN TEMPS REAL: pre-render, veus i mescla pura (sense
+# dispositiu: durant els tests mai es toca waveOut)
 import time as _t
 main.so._PRECARREGAT.clear()
-main.so.precarga()                         # so desactivat: no fa res
-assert main.so._PRECARREGAT == {}, "sense so no es precarrega res"
-main.so.SND_ON = True                      # forcem síntesi (sense sonar: cua)
-main.so._PRECARREGAT.clear()
-t0 = _t.time(); main.so.precarga(); pre_ms = (_t.time() - t0) * 1000
+main.so.precarga()                         # render pur: no fa cap soroll
 assert set(main.so._PRECARREGAT) == {"tret", "tret_enemic", "explosio_petita",
     "explosio_gran", "impacte", "kit", "dron_aliat", "missil", "boss",
     "pausa", "victoria", "gameover"}, sorted(main.so._PRECARREGAT)
-t0 = _t.time()                             # camí crític: només encuar (~µs)
+assert main.so._VEUS == [], "amb el so desactivat no es registra cap veu"
+t0 = _t.time()                             # cami critic: registrar = instantani
 main.so.tret(); main.so.explosio_gran(); main.so.kit()
-assert (_t.time() - t0) * 1000 < 50, "l'efecte precarregat no pot sintetitzar"
-main.so.set_enabled(False)                 # restaurem silenci dels tests
-while not main.so._CUA.empty():
-    main.so._CUA.get_nowait()              # buidem la cua de la prova
-assert main.so._FIL is None or main.so._FIL.daemon
+assert (_t.time() - t0) * 1000 < 50, "l'efecte ha de ser un no-op instantani"
+assert main.so._VEUS == []
+# mescla pura: dues veus es SUMEN al mateix tros (polifonia real)
+_tros0 = main.so._CHUNK
+main.so._CHUNK = 4
+try:
+    main.so._VEUS.append({"buf": [1000, -1000, 0, 0], "pos": 0, "vol": 1.0,
+                          "loop": False, "tag": "sfx", "acabada": False})
+    main.so._VEUS.append({"buf": [500, 500, 0, 0], "pos": 0, "vol": 0.5,
+                          "loop": False, "tag": "sfx", "acabada": False})
+    assert main.so._barreja_tros() == [1250, -750, 0, 0]
+    assert main.so._VEUS == [], "les veus acabades es retiren del mesclador"
+    # el pic global es retalla (mai clip dur): la suma desborda -> volum menor
+    for _b in ([30000, 30000, 30000, 30000], [30000, 30000, 30000, 30000]):
+        main.so._VEUS.append({"buf": _b, "pos": 0, "vol": 1.0,
+                              "loop": False, "tag": "sfx", "acabada": False})
+    tros = main.so._barreja_tros()
+    assert max(tros) <= 31000 and tros[0] > 15000, tros
+    # loop: la veu torna a comencar cada tros (com la musica)
+    main.so._VEUS.append({"buf": [7, 9, 0, 0], "pos": 0, "vol": 1.0,
+                          "loop": True, "tag": "musica", "acabada": False})
+    assert main.so._barreja_tros() == [7, 9, 0, 0]
+    assert main.so._barreja_tros() == [7, 9, 0, 0]
+    # matar per tag: la musica s'atura, els SFX continuen
+    main.so._VEUS.append({"buf": [1, 0, 0, 0], "pos": 0, "vol": 1.0,
+                          "loop": False, "tag": "sfx", "acabada": False})
+    main.so._mata_veus("musica")
+    assert [v["tag"] for v in main.so._VEUS] == ["sfx"]
+finally:
+    main.so._VEUS.clear()
+    main.so._CHUNK = _tros0
+assert main.so._DISPOSITIU is None, "els tests mai obren el dispositiu"
 _mus.pre_sintetitzar("intro")              # no-op segur fins i tot mut
 _mus.pre_sintetitzar("no-existeix")
 

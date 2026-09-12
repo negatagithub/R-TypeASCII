@@ -31,6 +31,10 @@ Conversió nota MIDI -> Hz: la fórmula temperada ``440 * 2**((m-69)/12)``.
 Els bucles es generen un sol cop i es guarden a la memòria cau
 (``_CACHE``): sonar 40 segons de nivell no resintetitza res.
 
+La reproducció és el MESCLADOR EN TEMPS REAL de ``so.py``: la música és
+una veu en bucle que sona SIMULTÀNIA amb els SFX (trets, explosions...)
+i canviar de peça no els talla mai.
+
 12 peces (intro + 11 nivells), cada una amb el seu caràcter:
   intro = fanfàrria arcade; 1 = marxa heroica; 2 = fàbrica militant;
   3 = tensió del cap; 4 = misteri de cova; 5 = groove urbà;
@@ -38,16 +42,13 @@ Els bucles es generen un sol cop i es guarden a la memòria cau
   9 = vals glacial; 10 = pols solar; 11 = tambors de jungla.
 """
 import math
-import threading
 
 import so
 
 RATE = so.RATE
 
 _CACHE = {}
-_FIL_ACTUAL = None
 _NOM_ACTUAL = None
-_ATURA = threading.Event()
 
 
 def _midi_a_hz(m):
@@ -151,69 +152,30 @@ def pre_sintetitzar(nom):
             pass
 
 
-def _bucle_en_fil(buf, marca):
-    import winsound
-    while not marca.is_set():     # un PlaySound per volta: si un SFX ens
-        try:                      # talla (SND_NOSTOP el protegeix), el bucle
-            winsound.PlaySound(bytes(buf), winsound.SND_MEMORY  # es reprèn
-                               | winsound.SND_NODEFAULT | winsound.SND_NOSTOP)
-        except (RuntimeError, OSError, ValueError, AttributeError):
-            return
-        if marca.is_set():
-            return
-
-
 def sona(nom):
-    """Engega el bucle de la peca `nom` (atura l'anterior). No bloqueja.
+    """Engega el bucle de la peça `nom` (atura l'anterior). No bloqueja.
 
-    La musica comparteix el canal winsound amb els SFX: perque el bucle no
-    ROBI el canal als efectes (i aquests no hagin d'esperar 8 s a sonar),
-    el bucle es parteix en TROSSOS d'~1 s: entre tros i tros els SFX
-    encuats per `so` tenen ocasio de sonar. Peatge: la musica fa micro-pauses
-    quan hi ha foc intens (preferim el tret a temps que el fons continu).
+    La música és UNA VEU MÉS del mesclador en temps real (so.py): sona
+    SIMULTÀNIA amb els SFX i canviar de peça no els talla mai. Registrar
+    la veu costa microsegons; el bucle ja ve pre-renderitzat de la cau.
     """
-    global _FIL_ACTUAL, _NOM_ACTUAL
+    global _NOM_ACTUAL
     atura()
     _NOM_ACTUAL = None
     if not so.actiu() or nom not in PARTITURA:
         return
     try:
         mostres = sintetitzar(PARTITURA[nom])
-        tros = max(1, int(RATE * 1.0))     # trossos d'~1 s (buit de SFX)
-        trossos = [so._wav(mostres[i:i + tros])
-                   for i in range(0, len(mostres), tros)]
-        marca = threading.Event()
-
-        def _bucle_trossejat():
-            import winsound
-            while not marca.is_set():
-                for t in trossos:          # cada PlaySound = ~1 s de musica
-                    if marca.is_set():     # (talla neta en atura/canvi)
-                        return
-                    try:
-                        winsound.PlaySound(  # SND_NOSTOP: no talla els SFX
-                            bytes(t), winsound.SND_MEMORY
-                            | winsound.SND_NODEFAULT | winsound.SND_NOSTOP)
-                    except (RuntimeError, OSError, ValueError,
-                            AttributeError):
-                        return
-
-        fil = threading.Thread(target=_bucle_trossejat, daemon=True)
-        _FIL_ACTUAL = (fil, marca)
+    except (RuntimeError, OSError, ValueError, AttributeError, MemoryError):
+        return
+    if so._afegeix_veu(mostres, vol=0.5, loop=True, tag="musica"):
         _NOM_ACTUAL = nom
-        fil.start()
-    except (RuntimeError, OSError, ValueError, AttributeError):
-        _FIL_ACTUAL = None
-        _NOM_ACTUAL = None
 
 
 def atura():
-    """Atura la musica actual (el so en curs acaba, no en comenca cap de nou)."""
-    global _FIL_ACTUAL, _NOM_ACTUAL
-    if _FIL_ACTUAL is not None:
-        fil, marca = _FIL_ACTUAL
-        marca.set()
-        _FIL_ACTUAL = None
+    """Atura la música: treu les seves veus del mesclador (els SFX continuen)."""
+    global _NOM_ACTUAL
+    so._mata_veus("musica")
     _NOM_ACTUAL = None
 
 

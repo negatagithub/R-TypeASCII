@@ -279,9 +279,16 @@ final amb cristall).
   riff, tempesta, vals, pols solar, tambors de jungla).
 - Síntesi: `sintetitzar()` mescla les 3 veus en un sol bucle (lead quadrat
   + baix sinusoïdal + percussió bombo/caixa/plat) amb memòria cau
-  (`_CACHE`); `sona()` el reprodueix en bucle en un thread daemon via
-  `winsound.PlaySound(SND_MEMORY)` (sincrònic per limitació de l'API, com
-  els SFX), `atura()` el para, `actual()` diu què sona.
+  (`_CACHE`); `sona()` registra el bucle com una VEU en bucle del mesclador
+  d'`so.py` (temps real, polifònica amb els SFX), `atura()` el treu del
+  mesclador i `actual()` diu què sona.
+- Motor d'àudio (`so.py`): mesclador EN TEMPS REAL sobre `waveOut`
+  (`winmm.dll` via `ctypes`, tot stdlib). Un stream continu de trossos de
+  `_CHUNK` mostres (~20 ms) que el fil mesclador omple SUMANT totes les veus
+  actives (`_VEUS`, màx `_MAX_VEUS = 16`, retall global del pic). Un efecte
+  (`tret()`, ...) només registra una veu pre-renderitzada (`precarga()`):
+  zero síntesi al fil del joc, latència ~20-40 ms i cap so en talla cap
+  altre. Sense dispositiu, tot és un no-op segur.
 - Integració (`main.py`): `musica_nivell()` = `f"nivell_{CURRENT_MAP+1}"`;
   `run_round()` engega la peça en començar i l'atura en morir/completar/sortir;
   `show_intro()`, `show_game_over()` i `show_campaign_complete()` posen
@@ -312,6 +319,26 @@ final amb cristall).
 - **Game over tolerant**: qualsevol tecla repeteix el nivell; només `q`
   surt (abans, qualsevol tecla que no fos `r` abandonava el joc). La
   pantalla «CAMPANYA COMPLETADA» manté la semàntica `r` = reiniciar.
+
+### 2026-09-12
+- **Nivell 11 nou** (*LA JUNGLA VIVA*): 780 columnes d'art de selva (troncs
+  colossals, lianes penjants, arrels, llacunes verinoses i canòpia fosca),
+  fons de selva profunda amb parallax, 55 spawns i el cap **EL DEVORADOR**
+  a l'arena final (`python eines_art.py 11` valida i previsualitza).
+- **Música procedural** (`musica.py`): model de partitures
+  `PARTITURA = {nom: {bpm, lead, bass, drums}}` amb notació compacta
+  `seq("72:0.5 R:1")`; 12 peces (fanfàrria `intro` + una per nivell,
+  90-150 bpm). Bucles pre-renderitzats amb memòria cau.
+- **Motor d'àudio EN TEMPS REAL** (`so.py`): substituïm `winsound`
+  (un sol canal, sense asíncron des de memòria: retards i sons que es
+  tallaven) per un **mesclador polifònic sobre `waveOut`** (`winmm.dll` via
+  `ctypes`, tot stdlib): stream continu de trossos de ~20 ms que el fil
+  mesclador omple sumant TOTES les veus —SFX i música sonen simultànis,
+  latència ~20-40 ms, zero síntesi al fil del joc (12 SFX pre-renderitzats
+  amb `precarga()`), retall global del pic i `atexit` que tanca net.
+- **Tests**: bloc 23 (partitures: 12 peces, compassos de 4 negres, bucles
+  amb cau, nivell↔peça) i bloc 24 (motor: pre-render sense soroll, veus i
+  mescla pura —suma, retall, loop, matar per tag— sense obrir el dispositiu).
 
 ### 2026-08-30
 - **Terreny dibuixat (art)**: nou format de nivell amb dibuix literal a 20

@@ -1,40 +1,52 @@
 # -*- coding: utf-8 -*-
-"""Síntesi de so procedural per a R-Type ASCII (sense arxius de so).
+"""Mesclador d'àudio EN TEMPS REAL per a R-Type ASCII (sense arxius de so).
 
 Genera les ones amb FORMULES MATEMÀTIQUES (sinus, onada quadrada, soroll
 determinista, escombrats de freqüència i envolvents d'atac/alliberament) i les
-reprodueix amb `winsound` (només Windows) directament des de memòria, sense
-cap fitxer .wav ni recurs pregravadet. Cada efecte es descriu com una funció
-`freq(t)` variada per paràmetres; la síntesi mostreja la fórmula i l'empaqueta
-en un buffer WAV volàtil.
+reprodueix amb l'API **waveOut** de Windows (`winmm.dll`, via `ctypes`: tot
+stdlib, zero paquets externs). Cada efecte es descriu com una funció `freq(t)`
+variada per paràmetres; la síntesi mostreja la fórmula UN COP (precàrrega) i
+el mesclador la summa al stream en temps real.
+
+Per què no `winsound`? És UN sol canal i no admet so asíncron des de memòria
+(`SND_MEMORY + SND_ASYNC` llença RuntimeError): cada so nou tallava l'anterior
+i els SFX quedaven desfasats darrere la música. `waveOut` ens dona un stream
+continu que un fil mesclador omple de trossos de ~20 ms SUMANT totes les veus:
+
+  * POLIFONIA: trets, explosions i música sonen SIMULTÀNIS (veus independents).
+  * TEMPS REAL: un efecte nou entra al tros següent -> se sent en ~20-40 ms.
+  * ZERO BLOQUEIG: disparar un efecte només registra una veu (microsegons).
 
 Es desactiva tot sol:
-  - si `winsound` no està disponible (plataforma no Windows),
+  - si winmm no està disponible (plataforma no Windows),
   - si la variable d'entorn R_TYPE_SO és "0",
   - si els tests o el mode demo criden so.set_enabled(False).
 
-Les proves poden forçar-ho amb so.set_enabled(False). Reproduir mai ha de
-fer petar el joc: qualsevol error de so es menja en silenci.
+Reproduir mai ha de fer petar el joc: qualsevol error d'àudio es menja en
+silenci; sense dispositiu, tot sona com un no-op segur.
 """
+import atexit    # tancament net del dispositiu waveOut en sortir
 import math
 import os
-import queue      # cua FIFO del motor d'àudio (anti-retard)
 import random
-import struct
+import struct    # només pel _wav llegat; el mesclador empaqueta amb array
 import threading
+import time      # son del fil mesclador entre trossos
+
+from array import array   # empaquetat PCM rapid (16 bits little-endian)
+
+try:              # API waveOut (winmm.dll): stream d'audio en temps real
+    from ctypes import (WinDLL, Structure, byref, c_char_p, c_uint16,
+                        c_uint32, c_void_p, cast, sizeof, POINTER)
+    _winmm = WinDLL("winmm")
+except (OSError, ImportError):            # no Windows / entorn sense so
+    _winmm = None
 
 SND_ON = os.environ.get("R_TYPE_SO", "1") != "0"
 
-try:
-    import winsound  # només Windows (part de la stdlib)
-    _DISPONIBLE = True
-except ImportError:                       # no Windows / entorn sense so
-    winsound = None
-    _DISPONIBLE = False
-
 RATE = 22050                              # mostres per segon
 _AMPLITUD = 20000                         # Pic del PCM de 16 bits
-_ultim = b""                              # el buffer reproduït ha de viure
+_DISPONIBLE = _winmm is not None
 
 
 def set_enabled(actiu: bool) -> None:
@@ -88,86 +100,228 @@ def _wav(mostres: list) -> bytes:
 
 
 # --------------------------------------------------------------------------- #
-# Motor de cues: UN sol fil reproductor + precàrrega (anti-retard)            #
+# Motor EN TEMPS REAL: mesclador polifonic sobre waveOut (winmm via ctypes)   #
 # --------------------------------------------------------------------------- #
-# Disseny anterior: cada efecte creava el seu thread i cridava PlaySound
-# SÍNCRON (SND_MEMORY sol). Això té dues penalitzacions:
-#   1. winsound és UNA sola cua global: cada PlaySound nou TALLA l'anterior
-#      (el tret tallava l'explosió i viceversa) i el so sembla que arribi tard.
-#   2. Crear un thread per efecte costa ~1-5 ms, que se suma al retard.
-#
-# Disseny actual: UN fil reproductor persistent (`_FIL`) amb cua FIFO
-# (`_CUA`). El fil del joc només fa `_CUA.put(buf)` (~µs, mai bloqueja) i el
-# fil d'àudio encadena els buffers amb PlaySound SÍNCRON. Els efectes
-# freqüents (tret, explosions...) es PRECARREGUEN (`precarga()`) en arrencar
-# el joc: el primer tret ja no paga la síntesi (~2-11 ms) ni l'empaquetat WAV.
-# Amb `SND_NOSTOP` cap efecte talla l'anterior: si la cua és plena, el so nou
-# s'omet en comptes de tallar el que sona (millor perdre un tret que
-# entrebancar tota la banda sonora).
-_CUA = queue.Queue(maxsize=8)         # FIFO d'efectes pendents (buffers WAV)
-_FIL = None                           # fil reproductor persistent
-_PRECARREGAT = {}                     # nom -> bytes WAV llestos per sonar
+# Un sol stream d'audio continu: el fil mesclador omple el driver de trossos
+# de _CHUNK mostres (~20 ms) barrejant TOTES les veus actives (SFX + musica).
+# tret()/musica.sona() nomes REGISTREN una veu (microsegons, mai bloquegen):
+# la veu entra al tros seguent i se sent en ~20-40 ms. Cap so talla cap
+# altre: es sumen. Sense dispositiu, tot sona com un no-op segur.
+_CHUNK = RATE // 50          # 441 mostres = 20 ms (resolucio temporal)
+_PROFUNDITAT = 2             # trossos encuats al driver (latencia ~20-40 ms)
+_MAX_VEUS = 16               # mes veus no ajuda: totes retallarien de soroll
+
+_PRECARREGAT = {}            # nom -> mostres ja sintetitzades (pre-render)
+_VEUS = []                   # veus actives: {buf, pos, vol, loop, tag, acabada}
+_LOCK = threading.Lock()     # protegeix _VEUS (fil del joc <-> mesclador)
+_PENDENTS = []               # [(WAVEHDR, bytes)] en vol dins el driver
+_DISPOSITIU = None           # handle HWAVEOUT (None = encara sense stream)
+_FIL_MESCLA = None           # fil mesclador (daemon)
 
 
-def _bucle_reproductor() -> None:
-    """Fil d'àudio: treu buffers de la cua i els sona un darrere l'altre."""
-    while True:
-        buf = _CUA.get()
-        if buf is None:               # sentinella: morir (només en tests)
-            return
-        try:
-            winsound.PlaySound(buf, winsound.SND_MEMORY
-                               | winsound.SND_NODEFAULT | winsound.SND_NOSTOP)
-        except (RuntimeError, OSError, ValueError, AttributeError):
-            pass
+class _WAVEFORMATEX(Structure):
+    """WAVEFORMATEX: PCM 22050 Hz, mono, 16 bits."""
+    _fields_ = [("wFormatTag", c_uint16), ("nChannels", c_uint16),
+                ("nSamplesPerSec", c_uint32), ("nAvgBytesPerSec", c_uint32),
+                ("nBlockAlign", c_uint16), ("wBitsPerSample", c_uint16),
+                ("cbSize", c_uint16)]
 
 
-def _assegura_fil() -> None:
-    """Engega el fil reproductor (un sol cop, daemon, mai trenca el joc)."""
-    global _FIL
-    if _FIL is not None and _FIL.is_alive():
+class _WAVEHDR(Structure):
+    """WAVEHDR: capcalera d'un tros de PCM en vol dins el driver."""
+    _fields_ = [("lpData", c_void_p), ("dwBufferLength", c_uint32),
+                ("dwBytesRecorded", c_uint32), ("dwUser", c_void_p),
+                ("dwFlags", c_uint32), ("dwLoops", c_uint32),
+                ("lpNext", c_void_p), ("reserved", c_void_p)]
+
+
+if _winmm is not None:      # firmes exactes (segur a 32 i 64 bits)
+    for _fn, _args in (
+        ("waveOutOpen", (POINTER(c_void_p), c_uint32, POINTER(_WAVEFORMATEX),
+                         c_void_p, c_void_p, c_uint32)),
+        ("waveOutPrepareHeader", (c_void_p, POINTER(_WAVEHDR), c_uint32)),
+        ("waveOutUnprepareHeader", (c_void_p, POINTER(_WAVEHDR), c_uint32)),
+        ("waveOutWrite", (c_void_p, POINTER(_WAVEHDR), c_uint32)),
+        ("waveOutReset", (c_void_p,)),
+        ("waveOutClose", (c_void_p,)),
+    ):
+        getattr(_winmm, _fn).argtypes = _args
+        getattr(_winmm, _fn).restype = c_uint32
+
+_WHDR_DONE = 0x00000001     # el driver ja ha tocat el tros
+
+
+def _obre_dispositiu():
+    """Obre el stream (22050 Hz mono 16 bits) i engega el fil mesclador."""
+    global _DISPOSITIU, _FIL_MESCLA
+    if _DISPOSITIU is not None or _winmm is None:
+        return _DISPOSITIU
+    wfx = _WAVEFORMATEX(1, 1, RATE, RATE * 2, 2, 16, 0)
+    h = c_void_p()
+    try:
+        # WAVE_MAPPER = 0xFFFFFFFF, CALLBACK_NULL = 0 (sondeig de WHDR_DONE)
+        err = _winmm.waveOutOpen(byref(h), 0xFFFFFFFF, byref(wfx),
+                                 None, None, 0)
+    except (OSError, ValueError, AttributeError):
+        return None
+    if err != 0:
+        return None
+    _DISPOSITIU = h
+    try:
+        _FIL_MESCLA = threading.Thread(target=_fil_mesclador, daemon=True)
+        _FIL_MESCLA.start()
+    except (RuntimeError, OSError, ValueError, AttributeError):
+        pass
+    return _DISPOSITIU
+
+
+def _tanca_dispositiu() -> None:
+    """Reset + Close del stream en sortir del proces (via atexit)."""
+    global _DISPOSITIU
+    if _DISPOSITIU is None or _winmm is None:
         return
     try:
-        _FIL = threading.Thread(target=_bucle_reproductor, daemon=True)
-        _FIL.start()
-    except (RuntimeError, OSError, ValueError, AttributeError):
-        _FIL = None
+        _winmm.waveOutReset(_DISPOSITIU)
+        _winmm.waveOutClose(_DISPOSITIU)
+    except (OSError, ValueError, AttributeError):
+        pass
+    _DISPOSITIU = None
 
 
-def _buf(nom: str, mostres: list) -> bytes:
-    """Guarda el WAV sintetitzat a la precàrrega i el retorna com a bytes."""
-    global _ultim
-    try:
-        _ultim = _wav(mostres)
-        dades = bytes(_ultim)  # còpia pròpia: el buffer no mor mai
-        _PRECARREGAT[nom] = dades
-        return dades
-    except (RuntimeError, OSError, ValueError, AttributeError,
-            struct.error, MemoryError):
-        return b""
+atexit.register(_tanca_dispositiu)
 
 
-def _encua(dades: bytes) -> None:
-    """Posa un buffer a la cua d'àudio sense bloquejar mai el joc."""
-    if not dades:
+def _afegeix_veu(buf, vol=1.0, loop=False, tag="sfx") -> bool:
+    """Registra una veu al mesclador: NO bloqueja (microsegons).
+
+    Retorna True si sonara. Si ja hi ha _MAX_VEUS, cau la SFX mes antiga
+    (la musica, persistent, es protegeix). Sense dispositiu, no-op segur.
+    """
+    if not actiu() or not buf:
+        return False
+    with _LOCK:
+        if len(_VEUS) >= _MAX_VEUS:
+            for i in range(len(_VEUS)):
+                if _VEUS[i]["tag"] != "musica":
+                    del _VEUS[i]
+                    break
+            else:
+                del _VEUS[0]
+        _VEUS.append({"buf": buf, "pos": 0, "vol": float(vol),
+                      "loop": bool(loop), "tag": tag, "acabada": False})
+    if _DISPOSITIU is None:
+        _obre_dispositiu()
+    return True
+
+
+def _mata_veus(tag: str) -> None:
+    """Treu totes les veus amb aquell tag (p. ex. canviar de musica)."""
+    with _LOCK:
+        _VEUS[:] = [v for v in _VEUS if v["tag"] != tag]
+
+
+def _barreja_tros() -> list:
+    """Mescla _CHUNK mostres de TOTES les veus actives (pur, sense I/O).
+
+    Avanca el cursor de cada veu, aplica loop, retira les acabades i retalla
+    el pic global: si la suma desborda, es baixa el volum de tot el tros
+    (mai clip dur). El fil del joc pot registrar veus mentre aixo corre.
+    """
+    out = [0] * _CHUNK
+    with _LOCK:
+        veus = list(_VEUS)
+    for v in veus:
+        buf, n_buf = v["buf"], len(v["buf"])
+        pos, vol = v["pos"], v["vol"]
+        i = 0
+        while i < _CHUNK:
+            n = min(_CHUNK - i, n_buf - pos)
+            if n <= 0:
+                break
+            if vol == 1.0:                    # cas comu: suma d'enters
+                for j, s in enumerate(buf[pos:pos + n]):
+                    out[i + j] += s
+            else:
+                for j, s in enumerate(buf[pos:pos + n]):
+                    out[i + j] += s * vol
+            pos += n
+            i += n
+            if pos >= n_buf:
+                if v["loop"]:
+                    pos = 0
+                else:
+                    break
+        v["pos"] = pos
+        v["acabada"] = pos >= n_buf and not v["loop"]
+    with _LOCK:
+        _VEUS[:] = [v for v in _VEUS if not v["acabada"]]
+    pic = max(max(out), -min(out))
+    if pic > 31000:                           # retall global, mai clip dur
+        f = 31000.0 / pic
+        return [int(s * f) for s in out]
+    return [int(s) for s in out]
+
+
+def _pendents_vius() -> int:
+    """Reintegra els trossos que el driver ja ha tocat; retorna quants queden.
+
+    Només el fil mesclador toca _PENDENTS (sense lock). Amb CALLBACK_NULL
+    no hi ha callback: sondegem la bandera WHDR_DONE de cada capcalera.
+    """
+    if _DISPOSITIU is None:
+        return 0
+    vius = 0
+    for hdr, dada in list(_PENDENTS):
+        if hdr.dwFlags & _WHDR_DONE:
+            _winmm.waveOutUnprepareHeader(_DISPOSITIU, byref(hdr),
+                                          sizeof(_WAVEHDR))
+            try:
+                _PENDENTS.remove((hdr, dada))
+            except ValueError:
+                pass
+        else:
+            vius += 1
+    return vius
+
+
+def _escriu(tros: list) -> None:
+    """Empaqueta un tros a PCM 16 bits i l'encua al driver."""
+    dades = array("h", tros).tobytes()
+    hdr = _WAVEHDR()
+    hdr.lpData = cast(c_char_p(dades), c_void_p)
+    hdr.dwBufferLength = len(dades)
+    if _winmm.waveOutPrepareHeader(_DISPOSITIU, byref(hdr),
+                                   sizeof(_WAVEHDR)) != 0:
         return
-    _assegura_fil()
-    try:
-        _CUA.put_nowait(dades)   # cua plena -> ometem (SND_NOSTOP mana)
-    except queue.Full:
-        pass
-    except (RuntimeError, OSError, ValueError, AttributeError):
-        pass
+    if _winmm.waveOutWrite(_DISPOSITIU, byref(hdr), sizeof(_WAVEHDR)) != 0:
+        _winmm.waveOutUnprepareHeader(_DISPOSITIU, byref(hdr),
+                                      sizeof(_WAVEHDR))
+        return
+    _PENDENTS.append((hdr, dades))   # refs vives mentre sona dins el driver
+
+
+def _fil_mesclador() -> None:
+    """Fil de sortida: manté _PROFUNDITAT trossos al driver (temps real).
+
+    Un efecte registrat entre mig entra al tros següent: latència màxima
+    ~_PROFUNDITAT * _CHUNK (~40 ms), imperceptible davant del tick del joc.
+    """
+    while _DISPOSITIU is not None:
+        vius = _pendents_vius()
+        while _DISPOSITIU is not None and _pendents_vius() < _PROFUNDITAT:
+            _escriu(_barreja_tros())
+        # Amb veus actives anem fins (tros nou cada ~20 ms); en silenci total
+        # respirem mes (el driver ja té trossos de zero en cua).
+        time.sleep(0.004 if (_VEUS or vius) else 0.02)
 
 
 def precarga() -> None:
-    """Sintetitza un sol cop tots els SFX i els deixa llestos (anti-retard).
+    """Pre-sintetitza els SFX (CPU pura, cap soroll) i escalfa el stream.
 
-    Cridar-ho en arrencar el joc (abans del primer frame): el primer tret ja
-    no paga síntesi ni empaquetat WAV. Amb so desactivat no fa res.
+    Cridar-ho en arrencar el joc, abans del primer frame: el primer tret ja
+    no paga síntesi i waveOutOpen (que pot tardar uns ms) ja ha corregut.
+    Renderitzar no sona: es pot cridar amb el so desactivat per provar-ho.
     """
-    if not actiu():
-        return
     for nom, fn in (("tret", _sint_tret), ("tret_enemic", _sint_tret_enemic),
                     ("explosio_petita", _sint_explosio_petita),
                     ("explosio_gran", _sint_explosio_gran),
@@ -177,33 +331,23 @@ def precarga() -> None:
                     ("victoria", _sint_victoria),
                     ("gameover", _sint_gameover)):
         try:
-            _PRECARREGAT.setdefault(nom, bytes(_wav(fn())))
+            _PRECARREGAT.setdefault(nom, fn())
         except (RuntimeError, OSError, ValueError, AttributeError,
                 struct.error, MemoryError):
             pass
+    if actiu():
+        _obre_dispositiu()          # pre-escalfament del dispositiu
 
 
 def _play(seqs) -> None:
-    """(Compatibilitat) Reprodueix mostres JA sintetitzades via la cua.
-
-    Els efectes nous ja no passen per aquí: fan servir la precàrrega +
-    `_encua` directament (zero síntesi en el camí crític). Aquesta funció
-    encara empaqueta el WAV aquí (fora del fil del joc no hi ha res: qui la
-    crida ja és un efecte rar) i l'encua sense bloquejar.
-    """
-    if not actiu():
+    """(Compatibilitat) Registra mostres ja sintetitzades com una veu."""
+    if not actiu() or not seqs:
         return
-    if not isinstance(seqs, list) or not seqs or isinstance(seqs[0], int):
-        mostres = seqs
-    else:
+    if isinstance(seqs, list) and not isinstance(seqs[0], int):
         mostres = [m for seq in seqs for m in seq]
-    global _ultim
-    try:
-        _ultim = _wav(mostres)
-        _encua(bytes(_ultim))
-    except (RuntimeError, OSError, ValueError, AttributeError,
-            struct.error, MemoryError):
-        pass
+    else:
+        mostres = seqs
+    _afegeix_veu(mostres, tag="sfx")
 
 
 # --------------------------------------------------------------------------- #
@@ -252,15 +396,18 @@ def _soroll(f0: float, llavor: int = 7):
 # crític quan `precarga()` ja ha corregut (i una sola síntesi la primera
 # vegada si no).
 def _toca_precarregat(nom: str, sint_fn) -> None:
-    if not actiu():
-        return
+    """Reprodueix un SFX: agafa el pre-render i registra la veu.
+
+    Zero síntesi al camí crític quan precarga() ja ha corregut: registrar
+    una veu costa microsegons i sona al tros següent del mesclador.
+    """
     dades = _PRECARREGAT.get(nom)
     if not dades:
         try:
-            dades = _buf(nom, sint_fn())
+            dades = _PRECARREGAT.setdefault(nom, sint_fn())
         except (RuntimeError, OSError, ValueError, AttributeError):
             return
-    _encua(dades)
+    _afegeix_veu(dades, tag="sfx")
 
 
 def _sint_tret() -> list:
