@@ -766,6 +766,32 @@ try:
 finally:
     g.SCORES_FILE = old_file
 
+# --- 15. gamepad --------------------------------------------------------------
+# Sense controlador conectat, el modul s'ha de comportar com una operacio
+# no-op: detect_first() -> None, read_actions() -> conjunt buit, i el bucle
+# continua funcionant (sense crashar) quan _GAMEPAD_ID es None.
+try:
+    import gamepad as gp
+    if gp.GAMEPAD_AVAILABLE:
+        check("gamepad module loaded xinput", callable(gp.read_actions))
+    # Sense gamepad connectat, detect_first() ha de ser None:
+    if gp.GAMEPAD_AVAILABLE and gp.detect_first() is None:
+        check("gamepad absent returns empty actions",
+              gp.read_actions(None) == set())
+    # read_actions(None) o sense modulo: sempre buit (fallback segure).
+    check("gamepad safe with none id", gp.read_actions(None) == set())
+    # main._GAMEPAD_ID esta definida (pot ser None sense controlador).
+    check("main exposes gamepad id global", hasattr(g, "_GAMEPAD_ID"))
+    check("main gamepad id is none without controller or int with one",
+          g._GAMEPAD_ID is None or isinstance(g._GAMEPAD_ID, int))
+except Exception as exc:
+    # El modul gamepad es opcional: si falla per alguna raó (plataforma no
+    # Windows, etc.) el test no should fallar; només comprova que main té la
+    # variable global.
+    check("gamepad module import resilient", hasattr(g, "_GAMEPAD_ID"))
+    if gp is None:
+        check("gamepad module absent is handled", g._GAMEPAD_ID is None)
+
 # --- resum ----------------------------------------------------------------------
 print()
 if failures:

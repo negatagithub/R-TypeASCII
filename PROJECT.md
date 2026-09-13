@@ -21,6 +21,7 @@ de canvis.
 | `nivell_<n>.py` | Nous nivells; el carregador els descobreix i ordena pel número |
 | `musica.py` | Música de fons procedural: `PARTITURA` (12 peces en bucle) |
 | `so.py` | Efectes de so procedurals (síntesi, sense arxius) |
+| `gamepad.py` | Suport de gamepad via XInput (Windows): detecta el primer controlador i tradueix stick/botons a les accions del joc |
 | `README.md` | Documentació d'usuari |
 | `PROJECT.md` | Aquest document |
 | `PROJECT_SUMMARY.md` | Resum de disseny original (històric) |
@@ -50,7 +51,12 @@ la mida del terminal:
   només el primer frame neteja. Sense colors, fallback `cls`.
 - Colors: codis SGR via `paint()`; detecció automàtica en arrencar.
 
-### 2.3 Entrada de teclat
+### 2.3 Entrada: teclat + gamepad (XInput)
+- **Entrada canònica**: a cada frame, `run_round()` consulta un conjunt `actions` (`ACTION_*`), no tecles nues. Això permet combinar entrades.
+- **Teclat** (`pressed_keys()`): estat via `GetAsyncKeyState` (ctypes); fallback `_pressed_keys_fallback()` (msvcrt). Les tecles `KEY_*` es tradueixen a accions.
+- **Gamepad** (`gamepad.read_actions(id)`): primer dispositiu XInput detectat (`detect_first()`), lleugeridrament en `main._GAMEPAD_ID`. El stick esquerre mou la nau (amb deadzone) i els botons A/B/X/Start/Back es mapeien a `ACTION_*` (dispar, pausa, sortir, repetir).
+- **Prioritat / fusió**: si `_GAMEPAD_ID is not None`, llegeix les accions del gamepad i les **uneix** (`|`) amb les del teclat —el gamepad té prioritat, però el teclat funciona com a complement o fallback.
+
 - Camí principal: estat del teclat per frame via `GetAsyncKeyState`
   (ctypes); fallback `_pressed_keys_fallback()` (msvcrt) si no hi ha API.
 - Les tecles (`KEY_*`) es tradueixen a accions canòniques (`ACTION_*`).

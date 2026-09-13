@@ -39,6 +39,25 @@ python main.py --demo 2         # demo del nivell 2
 | `q` | Sortir |
 | `r` | A la pantalla «Campanya completada»: repetir la campanya des del nivell 1 |
 
+
+### Gamepad (XInput)
+
+Opcionalment, el joc detecta el primer gamepad conectat via XInput i accepta les
+seves comandes simultàniament amb el teclat (el gamepad té prioritat):
+
+| Control | Acció |
+|---------|-------|
+| Stick esquerre | Moure la nau (amunt/avall/endarrere/endavant) |
+| A | Disparar (mantenir = tir continu) |
+| B | Pausa |
+| X | Sortir del menú |
+| Start | Pausa |
+| Back | Repetir la campanya (a la pantalla final) |
+
+El suport per a dos jugadors (dues naus, dos gamepads) és plausible en el futur
+ampliant el mateix modul i afegint un segon estat de jugador.
+
+
 L'entrada es llegeix per **estat del teclat** a cada frame (via
 `GetAsyncKeyState`): pots mantenir les tecles premudes i combinar-ne diverses
 alhora —moviment en diagonal mentre disparres— com en un joc d'arcade.

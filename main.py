@@ -75,6 +75,14 @@ try:
 except ImportError:  # permet provar la lògica del joc en altres plataformes
     msvcrt = None
 
+try:
+    import gamepad  # suport de gamepad via XInput (Windows)
+    _GAMEPAD_ID = gamepad.detect_first()
+except Exception:  # entorn sense XInput o tests: segueix només amb teclat
+    gamepad = None
+    _GAMEPAD_ID = None
+
+
 # La sortida va directa a stdout: els degradats REXPaint dels nivells nous
 # (8-10) pinten blocs d'ombra Unicode (░▒▓), aixi que cal garantir UTF-8.
 # Amb errors="replace" una consola sense suport mai fa crashar el joc.
@@ -2374,6 +2382,19 @@ def show_intro() -> None:
                 CODE_HINT))
     print(paint(f"     {KEY_QUIT}       sortir", CODE_HINT))
     print()
+    # --- controls de gamepad (si un dispositiu XInput està disponible) -------
+    # _GAMEPAD_ID és global; només es detecta un cop a l'inici.
+    # Informació informativa: el gamepad funciona si n'hi ha un de connectat.
+    if _GAMEPAD_ID is not None:
+        print(paint("   CONTROLS DE GAMEPAD (XInput):", CODE_HINT))
+        print(paint("     stick esquerre  moure la nau", CODE_HINT))
+        print(paint("     A              disparar (mantenir = tir continu)", CODE_HINT))
+        print(paint("     B              pausa", CODE_HINT))
+        print(paint("     X              sortir", CODE_HINT))
+        print(paint("     Start          pausa", CODE_HINT))
+        print(paint("     Back           repetir campanya", CODE_HINT))
+        print(paint("     (prioritat: gamepad + teclat; funciona amb ambdós)", CODE_HINT))
+        print()
     print(paint("   MILLORS PUNTUACIONS", CODE_HUD))
     for line in scores_block().splitlines():
         print(paint(line, CODE_HUD))
@@ -2742,11 +2763,19 @@ def run_round():
     musica_sona(musica_nivell())  # cada nivell, la seva musica en bucle
 
     while True:
-        # 1. Llegeix l'ESTAT del teclat: totes les tecles premudes ara mateix.
-        #    En ser estat (i no pulsacions), pots mantenir la tecla premuda
-        #    per moure't contínuament i prémer diverses tecles alhora.
-        #    En mode demo, qui decideix es el pilot automatic.
-        actions = demo_actions(state) if DEMO_MODE else pressed_keys()
+        # 1. Llegeix l'ESTAT del teclat o del gamepad (si hi ha), o demo.
+        #    En ser estat (i no pulsacions), pots mantenir premuda per
+        #    moure't contínuament i prémer-ne diverses alhora.
+        #    En mode demo, qui decideix és el pilot automàtic.
+        if DEMO_MODE:
+            actions = demo_actions(state)
+        else:
+            actions = set()
+            # Gamepad: si està disponible, llegeix primer (prioritat).
+            if _GAMEPAD_ID is not None:
+                actions |= gamepad.read_actions(_GAMEPAD_ID)
+            # Teclat: sempre disponible com a complement / fallback.
+            actions |= pressed_keys()
 
         if ACTION_QUIT in actions:
             ESTAT_HERETAT = {}
