@@ -29,14 +29,8 @@ PALETA = {
     "O": ("O", "96"),   # cor de gel encastat al terra (arena)
 }
 
-# --- paleta del fons (abiss en bandes de degradat + aurora + nevada) ---------
+# --- paleta del fons (abiss negre + aurora i nevada esparses) ----------------
 PALETA_FONS = {
-    "D": ("▓", "34"),   # blau profundo: zenit de l'abiss
-    "P": ("▒", "34"),
-    "p": ("░", "94"),
-    "b": ("░", "37"),
-    "B": ("▒", "37"),
-    "g": ("▒", "90"),   # llit de gel (l'horizont)
     "~": ("~", "96"),   # aurora boreal
     "^": ("^", "90"),   # cims de gel llunyans
     ".": (".", "97"),   # nevada
@@ -155,24 +149,19 @@ def _cor_gel():
 
 
 # ---------------------------------------------------------------------------
-# EL FONS: abiss glacial en bandes de degradat + aurora + nevada
+# EL FONS: abiss glacial negre amb aurora i nevada esparses
 # ---------------------------------------------------------------------------
 def _fons():
     W = 120
     g = graella(W)
-    bandes = ((0, 1, "D"), (2, 4, "P"), (5, 7, "p"), (8, 10, "b"),
-              (11, 13, "B"), (14, 19, "g"))
-    for lo, hi, ch in bandes:
-        for y in range(lo, hi + 1):
-            for x in range(W):
-                g[y][x] = ch
     # estels al zenit
-    for i in range(18):
+    for i in range(14):
         x = (i * 53) % W
-        g[(i * 2) % 4][x] = "*"
-    # aurora boreal: ones de llum
+        if i % 3:
+            g[(i * 2) % 4][x] = "*"
+    # aurora boreal: ones de llum primes i esparses (no una capa)
     for x in range(W):
-        if (x // 6) % 4 == 0:
+        if (x // 6) % 4 == 0 and x % 2 == 0:
             g[3 + (x // 6) % 4][x] = "~"
     # cims de gel llunyans
     for x in range(W):
@@ -180,10 +169,10 @@ def _fons():
             g[14][x] = "^"
         if x % 13 == 5:
             g[15][x] = "^"
-    # nevada
+    # nevada: flocs esparsos, no un vel continu
     for x in range(W):
-        if x % 2 == 0:
-            g[5 + (x // 2) % 10][x] = "."
+        if x % 4 == 0:
+            g[6 + (x // 4) % 8][x] = "."
     # boira baixa sobre el llit
     for x in range(W):
         if x % 6 == 4:

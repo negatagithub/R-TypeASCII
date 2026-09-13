@@ -35,11 +35,12 @@ La reproducció és el MESCLADOR EN TEMPS REAL de ``so.py``: la música és
 una veu en bucle que sona SIMULTÀNIA amb els SFX (trets, explosions...)
 i canviar de peça no els talla mai.
 
-12 peces (intro + 11 nivells), cada una amb el seu caràcter:
+13 peces (intro + 12 nivells), cada una amb el seu caràcter:
   intro = fanfàrria arcade; 1 = marxa heroica; 2 = fàbrica militant;
   3 = tensió del cap; 4 = misteri de cova; 5 = groove urbà;
   6 = synthwave neó; 7 = riff infernal; 8 = tempesta elèctrica;
-  9 = vals glacial; 10 = pols solar; 11 = tambors de jungla.
+  9 = vals glacial; 10 = pols solar; 11 = tambors de jungla;
+  12 = pols de la gruta vermella.
 """
 import math
 
@@ -305,6 +306,15 @@ PARTITURA = {
                  seq("40:1 40:1 41:1 41:1"), seq("43:2 43:2")],
         "drums": [seq("40:0.5 40:0.5 60:1 40:0.5 40:0.5 60:1"),
                   seq("40:0.5 40:0.5 60:1 80:1 60:1")],
+    },
+    "nivell_12": {
+        "nom": "nivell_12", "bpm": 96,
+        "lead": [seq("57:1 60:1 62:1 60:1"), seq("62:1 65:1 62:1 60:1"),
+                 seq("57:1 55:1 57:1 60:1"), seq("62:2 60:2")],
+        "bass": [seq("36:1 36:1 36:1 36:1"), seq("38:1 38:1 36:1 36:1"),
+                 seq("34:1 34:1 34:1 34:1"), seq("36:2 36:2")],
+        "drums": [seq("40:1 40:1 60:1 40:1"), seq("40:1 40:1 60:1 80:1"),
+                  seq("40:1 40:1 60:1 40:1"), seq("40:1 40:1 60:1 40:1")],
     },
 }
 

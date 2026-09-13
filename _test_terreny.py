@@ -9,8 +9,8 @@ main.COLOR_ENABLED = False
 import main
 main.so.set_enabled(False)  # so desactivat en tests
 
-# 1. Els nivells venen dels fitxers numerats, en ordre (11 d'art)
-assert len(main.MAPS) == 11
+# 1. Els nivells venen dels fitxers numerats, en ordre (12 d'art)
+assert len(main.MAPS) == 12
 m = main.MAPS[0]
 assert m["name"] == "NIVELL 1 - PRIMER CONTACTE"
 assert len(m["spawns"]) == 59, len(m["spawns"])
@@ -56,6 +56,9 @@ assert main.MAPS[10]["art_columns"] and main.MAPS[10]["fons_columns"]
 assert any(s[1] == main.BOSS_KIND for s in main.MAPS[10]["spawns"])
 boss11 = next(s for s in main.MAPS[10]["spawns"] if s[1] == main.BOSS_KIND)
 assert main.MAPS[10]["art_columns"][boss11[0]][9] is None, "el devorador neix en cel net"
+assert main.MAPS[11]["name"] == "NIVELL 12 - GRUTA VERMELLA"
+assert main.MAPS[11]["art_columns"] and main.MAPS[11]["fons_columns"]
+assert any(s[1] == main.BOSS_KIND for s in main.MAPS[11]["spawns"])
 
 # 2. fit_corridor garanteix el corredor minim
 t, b = main.fit_corridor(50, 50)
@@ -128,7 +131,7 @@ assert st4["map_progress"] == 1.0
 assert not st4["terrain"] or all(c["x"] < 1.0 for c in st4["terrain"])
 
 # 9. garanties de disseny de TOTS els nivells: dins de durada i passables
-assert len(main.MAPS) == 11, len(main.MAPS)
+assert len(main.MAPS) == 12, len(main.MAPS)
 assert len(main.MAPS[0]["spawns"]) == 59
 assert len(main.MAPS[1]["spawns"]) == 84
 for idx, mapa in enumerate(main.MAPS, start=1):
@@ -213,9 +216,10 @@ assert main.level_from_args(["main.py", "2"]) == 1
 assert main.level_from_args(["main.py", "8"]) == 7        # segon acte
 assert main.level_from_args(["main.py", "10"]) == 9
 assert main.level_from_args(["main.py", "11"]) == 10      # la jungla viva
+assert main.level_from_args(["main.py", "12"]) == 11      # la gruta vermella
 try:
-    main.level_from_args(["main.py", "12"])               # fora de rang
-    raise AssertionError("hauria d'haver fallat amb nivell 12")
+    main.level_from_args(["main.py", "13"])               # fora de rang
+    raise AssertionError("hauria d'haver fallat amb nivell 13")
 except SystemExit as exc:
     assert exc.code == 1
 try:
@@ -471,7 +475,7 @@ main.CURRENT_MAP = 0
 
 # 23. musica procedural: partitura completa i motor sense maquinari
 import musica as _mus
-assert set(_mus.PARTITURA) == {"intro"} | {f"nivell_{n}" for n in range(1, 12)}, \
+assert set(_mus.PARTITURA) == {"intro"} | {f"nivell_{n}" for n in range(1, 13)}, \
     sorted(_mus.PARTITURA)
 for nom, peca in _mus.PARTITURA.items():
     assert peca["bpm"] > 0, nom

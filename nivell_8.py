@@ -12,7 +12,7 @@ tempesta. Escenes:
 
 Format 'art' (vegeu nivell_7.py): primer pla solid amb paleta mes fons
 decoratiu amb parallax. Estil REXPaint: parets en degradat de tres tons
-(░ ▒ ▓) i cel en bandes de color continues amb features dispersos.
+(░ ▒ ▓) i cel majoritariament negre amb features esparsos.
 Regla d'autoria (igual que el nivell 7): sostre top <= 4 i terra bot <= 6,
 de manera que les files 4..13 queden SEMPRE lliures per volar.
 Eina: python eines_art.py 8
@@ -30,16 +30,8 @@ PALETA = {
     "z": ("z", "93"),   # llamp encastat a la vora (SOLID com la roca)
 }
 
-# --- paleta del fons (cel en bandes de degradat + features) ------------------
+# --- paleta del fons (cel majoritariament negre + features esparsos) ----------
 PALETA_FONS = {
-    "D": ("▓", "35"),   # indigo profundo: zenit
-    "P": ("▒", "35"),
-    "p": ("░", "35"),
-    "b": ("░", "34"),
-    "B": ("▒", "34"),
-    "g": ("▒", "37"),
-    "l": ("░", "37"),
-    "m": ("▒", "90"),   # mar de nuvols (l'horizont)
     "*": ("*", "97"),   # estels
     "z": ("z", "93"),   # llamps llunyans
     "-": ("-", "37"),   # nuvols rodants
@@ -156,35 +148,25 @@ def _ull():
 def _fons():
     W = 120
     g = graella(W)
-    bandes = ((0, 1, "D"), (2, 3, "P"), (4, 6, "p"), (7, 9, "b"),
-              (10, 12, "B"), (13, 15, "g"), (16, 17, "l"), (18, 19, "m"))
-    for lo, hi, ch in bandes:
-        for y in range(lo, hi + 1):
-            for x in range(W):
-                g[y][x] = ch
     # estels dispersos al zenit
     for i in range(26):
         x = (i * 47) % W
-        g[1 + (i * 3) % 5][x] = "*"
+        if i % 5:
+            g[1 + (i * 3) % 5][x] = "*"
     # llamps llunyans: zigzag vertical
     for bx in (16, 56, 96):
         for i, y in enumerate(range(3, 10)):
             g[y][(bx + (i % 2)) % W] = "z"
-    # nuvols rodants a l'horizont
+    # nuvols rodants a l'horizont: taques esparses, no una capa
     for x in range(W):
-        if (x * 13) % 60 < 18:
+        if (x * 13) % 60 < 18 and x % 4 == 0:
             g[8][(x + 7) % W] = "-"
+        if (x * 17) % 60 < 12 and x % 5 == 0:
             g[9][(x + 11) % W] = "-"
     # plugim fi sobre el mar de nuvols
     for x in range(W):
         if x % 3 == 0:
             g[12 + (x // 3) % 4][x] = "."
-    # textura del mar de nuvols
-    for x in range(W):
-        if x % 5 == 2:
-            g[18][x] = "-"
-        if x % 7 == 3:
-            g[19][x] = "-"
     return tuple("".join(fila) for fila in g)
 
 

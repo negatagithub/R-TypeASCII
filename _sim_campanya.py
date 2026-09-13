@@ -27,15 +27,15 @@ main.show_game_over = show_game_over_stub
 main.show_campaign_complete = lambda s, record=False: events.append(
     "pantalla:campanya:%d" % s)
 
-# 1-5 superats, mort al 6 (es repeteix), 6-9 superats, mort al 10 (es
-# repeteix) i 10 superat (fi de campanya), 'r' la reinicia, mort al nivell 1
+# 1-5 superats, mort al 6 (es repeteix), 6-10 superats, mort a l'11 (es
+# repeteix) i 12 superat (fi de campanya), 'r' la reinicia, mort al nivell 1
 # i 'q' surt.
 resultats = [("completed", 100), ("completed", 200), ("completed", 300),
              ("completed", 400), ("completed", 500),
              ("dead", 40), ("completed", 600),
              ("completed", 700), ("completed", 800), ("completed", 850),
-             ("dead", 30), ("completed", 900),
-             ("dead", 10)]
+             ("completed", 900), ("dead", 30), ("completed", 950),
+             ("completed", 1000), ("dead", 10)]
 tecles = ["x", "x", "r", "q"]                   # repetir/repetir/reiniciar/sortir
 stat = {"r": 0, "t": 0}
 
@@ -79,14 +79,16 @@ esperat = [
     # Mort al 6: pantalla de game over, qualsevol tecla ('x') repeteix.
     "ronda:6:dead", "pantalla:mort:40", "tecla:'x'",
     "ronda:6:completed",
-    # Encara queden el 7, 8, 9 i el 10: s'encadenen automaticament.
+    # Encara queden el 7, 8, 9, 10 i l'11: s'encadenen automaticament.
     "ronda:7:completed", "ronda:8:completed", "ronda:9:completed",
-    # Mort al 10: game over tolerant, 'x' repeteix.
-    "ronda:10:dead", "pantalla:mort:30", "tecla:'x'",
-    # En superar el 10 (ultim nivell) es conclou la campanya: pantalla
-    # final, 'r' reinicia des de l'1.
     "ronda:10:completed",
-    "pantalla:campanya:900", "tecla:'r'", "intro:1",
+    # Mort a l'11: game over tolerant, 'x' repeteix.
+    "ronda:11:dead", "pantalla:mort:30", "tecla:'x'",
+    "ronda:11:completed",
+    # En superar el 12 (ultim nivell) es conclou la campanya: pantalla
+    # final, 'r' reinicia des de l'1.
+    "ronda:12:completed",
+    "pantalla:campanya:1000", "tecla:'r'", "intro:1",
     # Reiniciada la campanya, la nau mor al nivell 1 i 'q' surt del joc.
     "ronda:1:dead", "pantalla:mort:10", "tecla:'q'",
 ]

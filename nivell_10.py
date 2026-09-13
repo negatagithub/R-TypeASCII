@@ -11,7 +11,8 @@ Tanca del segon acte: el vol sobre la photosfera d'un sol moribund. Escenes:
 
 Format 'art' (vegeu nivell_7.py): primer pla solid amb paleta mes fons
 decoratiu amb parallax. Estil REXPaint: parets en degradat roig-taronja
-(░ ▒ ▓) i fons amb anell de corona, prominencies i vent solar.
+(░ ▒ ▓) i fons negre amb l'anell de corona, prominencies i vent solar
+esparsos.
 Regla d'autoria: sostre top <= 4 i terra bot <= 6 -> files 4..13 lliures.
 Eina: python eines_art.py 10
 """
@@ -29,14 +30,8 @@ PALETA = {
     "@": ("@", "97"),   # guspirella blanca a la vora (SOLID)
 }
 
-# --- paleta del fons (anell de corona, prominencies i vent solar) ------------
+# --- paleta del fons (espai negre + corona i vent solar esparsos) -------------
 PALETA_FONS = {
-    "D": ("▒", "90"),   # espai fosc al zenit
-    "P": ("▒", "31"),
-    "p": ("░", "31"),
-    "b": ("░", "33"),
-    "B": ("▒", "33"),
-    "g": ("▓", "33"),   # fotosfera (l'horizon ardent)
     "O": ("O", "93"),   # anell de corona
     "^": ("^", "91"),   # prominencia llunyana
     ".": (".", "93"),   # vent solar
@@ -168,18 +163,13 @@ def _corona():
     return tuple("".join(fila) for fila in g)
 
 # ---------------------------------------------------------------------------
-# EL FONS: anell de corona, prominencies i vent solar (estil REXPaint)
+# EL FONS: espai negre amb corona, prominencies i vent solar (esparsos)
 # ---------------------------------------------------------------------------
 def _fons():
     W = 120
     g = graella(W)
-    bandes = ((0, 1, "D"), (2, 3, "P"), (4, 6, "p"), (7, 9, "p"),
-              (10, 12, "B"), (13, 15, "B"), (16, 17, "b"), (18, 19, "g"))
-    for lo, hi, ch in bandes:
-        for y in range(lo, hi + 1):
-            for x in range(W):
-                g[y][x] = ch
     # l'anell de corona: cercle centrat a (60, 10) amb radi 9..12
+    # (es l'unic element dens del fons, i es un objecte, no una capa)
     for y in range(FILES):
         for x in range(W):
             d2 = (x - 60) ** 2 + (y - 10) ** 2
@@ -189,16 +179,18 @@ def _fons():
     for x in range(W):
         if x % 17 == 2:
             g[3][x] = "^"
+        if x % 17 == 2 and x % 3 == 0:
             g[4][x] = "^"
-    # vent solar: ratlles diagonals
+    # vent solar: ratlles diagonals primes
     for x in range(W):
-        if x % 3 == 0:
+        if x % 3 == 0 and x % 2 == 0:
             g[7 + (x // 3) % 7][x] = "."
     # guspires blanques disperses
     for i in range(14):
         x = (i * 61) % W
-        g[2 + (i * 5) % 4][x] = "@"
-    # corrents de plasma prop de la photosfera
+        if i % 2 == 0:
+            g[2 + (i * 5) % 4][x] = "@"
+    # corrents de plasma prop de la fotosfera
     for x in range(W):
         if x % 5 == 1:
             g[15 + (x // 5) % 4][x] = "~"
