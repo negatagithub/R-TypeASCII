@@ -110,6 +110,13 @@ def _wav(mostres: list) -> bytes:
 _CHUNK = RATE // 50          # 441 mostres = 20 ms (resolucio temporal)
 _PROFUNDITAT = 2             # trossos encuats al driver (latencia ~20-40 ms)
 _MAX_VEUS = 16               # mes veus no ajuda: totes retallarien de soroll
+_MAX_VEUS_TIPUS = 3          # veus simultanies maximes del MATEIX SFX (vegeu
+                             # _toca_precarregat: en rajades de trets i
+                             # explosions, el mesclador no ha d'acumular
+                             # clons del mateix efecte; el 4t s'omet)
+_SFX_LLIURES = frozenset(    # efectes esparsos/importants: mai es limiten
+    ("boss", "explosio_gran", "impacte", "kit", "victoria", "gameover",
+     "pausa"))
 
 _PRECARREGAT = {}            # nom -> mostres ja sintetitzades (pre-render)
 _VEUS = []                   # veus actives: {buf, pos, vol, loop, tag, acabada}
@@ -194,12 +201,21 @@ atexit.register(_tanca_dispositiu)
 def _afegeix_veu(buf, vol=1.0, loop=False, tag="sfx") -> bool:
     """Registra una veu al mesclador: NO bloqueja (microsegons).
 
-    Retorna True si sonara. Si ja hi ha _MAX_VEUS, cau la SFX mes antiga
-    (la musica, persistent, es protegeix). Sense dispositiu, no-op segur.
+    Retorna True si sonara. Dos limits protegeixen el mesclador:
+      - si ja hi ha _MAX_VEUS, cau la SFX mes antiga (la musica, persistent,
+        es protegeix);
+      - si ja hi ha _MAX_VEUS_TIPUS veus del MATEIX SFX, la nova s'omet:
+        en rajades de trets/explosions el so identical solapat 10 vegades
+        nomes fa soroll i CPU (els efectes esparsos de _SFX_LLIURES mai es
+        limiten). Sense dispositiu, no-op segur.
     """
     if not actiu() or not buf:
         return False
     with _LOCK:
+        if tag != "musica" and tag not in _SFX_LLIURES:
+            n_tipus = sum(1 for v in _VEUS if v["tag"] == tag)
+            if n_tipus >= _MAX_VEUS_TIPUS:
+                return False           # massa clons del mateix efecte
         if len(_VEUS) >= _MAX_VEUS:
             for i in range(len(_VEUS)):
                 if _VEUS[i]["tag"] != "musica":
@@ -399,7 +415,9 @@ def _toca_precarregat(nom: str, sint_fn) -> None:
     """Reprodueix un SFX: agafa el pre-render i registra la veu.
 
     Zero síntesi al camí crític quan precarga() ja ha corregut: registrar
-    una veu costa microsegons i sona al tros següent del mesclador.
+    una veu costa microsegons i sona al tros següent del mesclador. El tag
+    es el NOM de l'efecte: _MAX_VEUS_TIPUS limita quantes veus del mateix
+    efecte poden sonar alhora (vegeu _afegeix_veu).
     """
     dades = _PRECARREGAT.get(nom)
     if not dades:
@@ -407,7 +425,7 @@ def _toca_precarregat(nom: str, sint_fn) -> None:
             dades = _PRECARREGAT.setdefault(nom, sint_fn())
         except (RuntimeError, OSError, ValueError, AttributeError):
             return
-    _afegeix_veu(dades, tag="sfx")
+    _afegeix_veu(dades, tag=nom)
 
 
 def _sint_tret() -> list:

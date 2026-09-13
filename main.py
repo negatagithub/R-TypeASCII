@@ -1476,9 +1476,23 @@ def terrain_rects(column: dict) -> list:
     i inferior). Format d'art: UN rectangle per cada tram consecutiu de
     cel·les solidas, aixi que illes flotants, túnels o sigals donen tants
     rectangles com trams solidos tingui la columna pintada.
+
+    RENDIMENT: les cel·les d'una columna no canvien MAI (nomes canvia la
+    seva `x`, una vegada per tick), aixi que els rectangles es calculen UNA
+    vegada i es guarden a la mateixa columna amb la clau (x, mida pantalla).
+    El bucle de col·lisió demana els rects de la mateixa columna tantes
+    vegades com projectils hi hagi: sense cache, cada tret reconstruia els
+    ~80 columns visibles a cada tick i el cost creixia amb el numero de
+    projectils (caiguda drastica de FPS en rajades de trets). Amb cache,
+    el cost per tick es constant per columna. (Les columnes d'elevacions,
+    amb 2 rects i cap mostreig, no la necessiten.)
     """
     if "cells" not in column:
         return wall_rects(column)
+    clau = (column["x"], SCREEN_WIDTH, SCREEN_HEIGHT)
+    cache = column.get("_rects")
+    if cache is not None and cache[0] == clau:
+        return cache[1]
     w = 1.0 / SCREEN_WIDTH
     rects = []
     run_start = None
@@ -1492,6 +1506,7 @@ def terrain_rects(column: dict) -> list:
     if run_start is not None:
         rects.append((column["x"], run_start / SCREEN_HEIGHT, w,
                       (SCREEN_HEIGHT - run_start) / SCREEN_HEIGHT))
+    column["_rects"] = (clau, rects)
     return rects
 
 

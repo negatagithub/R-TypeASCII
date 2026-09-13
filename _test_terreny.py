@@ -120,6 +120,26 @@ st3b["shots"].append({"x": 0.48, "y": 0.01})
 main.update_world(st3b)
 assert st3b["shots"] == [], st3b["shots"]
 
+# 7c. cache de rects per columna de terreny (rendiment amb molts projectils)
+# Mateixa columna i mateix x -> la cache retorna el MATEIX objecte; en canviar
+# x, els rects es recalculen amb el nou x; i la clau inclou la mida del
+# terminal, aixi que un redimensionat tambe invalida la cache.
+col = {"x": 0.5, "cells": tuple(("#", "37") if y < 4 else None
+                                for y in range(main.ART_CANON_H))}
+r1 = main.terrain_rects(col)
+r2 = main.terrain_rects(col)
+assert r1 == r2 and r1 is r2, "mateix x ha de reutilitzar la cache"
+col["x"] = 0.75
+r3 = main.terrain_rects(col)
+assert all(wr[0] == 0.75 for wr in r3) and r3 != r1, "x nou -> rects nous"
+_sw, _sh = main.SCREEN_WIDTH, main.SCREEN_HEIGHT
+try:
+    main.SCREEN_HEIGHT = _sh + 2
+    r4 = main.terrain_rects(col)
+    assert col["_rects"][0][2] == _sh + 2, "redimensionat invalida la cache"
+finally:
+    main.SCREEN_WIDTH, main.SCREEN_HEIGHT = _sw, _sh
+
 # 8. simulacio completa del nivell sencer sense que la nau xoqui
 durada = main.MAPS[0]["duration"]
 st4 = main.new_state()
@@ -548,6 +568,39 @@ finally:
     main.so._VEUS.clear()
     main.so._CHUNK = _tros0
 assert main.so._DISPOSITIU is None, "els tests mai obren el dispositiu"
+
+# 24b. limit de veus per tipus: en rajades, el 4t clon del mateix SFX s'omet
+# (i els efectes esparsos de _SFX_LLIURES i la musica mai es limiten). El
+# dispositiu es intercepta perquè els tests mai obrin waveOut.
+_obre0 = main.so._obre_dispositiu
+main.so._obre_dispositiu = lambda: None
+main.so.set_enabled(True)                  # cal actiu() per registrar veus
+try:
+    _buf_tret = main.so._PRECARREGAT["tret"]
+    for _ in range(5):
+        main.so._afegeix_veu(_buf_tret, tag="tret")
+    assert sum(1 for v in main.so._VEUS if v["tag"] == "tret") \
+        == main.so._MAX_VEUS_TIPUS, "el 4t tret del mateix tipus s'omet"
+    _buf_boss = main.so._PRECARREGAT["boss"]
+    for _ in range(5):
+        main.so._afegeix_veu(_buf_boss, tag="boss")
+    assert sum(1 for v in main.so._VEUS if v["tag"] == "boss") == 5, \
+        "boss es espars/important: mai es limita"
+    for _ in range(5):
+        main.so._afegeix_veu([1, 0], loop=True, tag="musica")
+    assert sum(1 for v in main.so._VEUS if v["tag"] == "musica") == 5, \
+        "la musica mai es limita"
+    # i el tret_enemic (tipus limitat) amb _MAX_VEUS global plena: el drop
+    # del mes vell mai toca la musica
+    _buf_te = main.so._PRECARREGAT["tret_enemic"]
+    for _ in range(3):
+        main.so._afegeix_veu(_buf_te, tag="tret_enemic")
+    assert sum(1 for v in main.so._VEUS if v["tag"] == "tret_enemic") == 3
+finally:
+    main.so._VEUS.clear()
+    main.so.set_enabled(False)
+    main.so._obre_dispositiu = _obre0
+
 _mus.pre_sintetitzar("intro")              # no-op segur fins i tot mut
 _mus.pre_sintetitzar("no-existeix")
 
